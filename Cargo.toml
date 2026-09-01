@@ -1,0 +1,40 @@
+[package]
+name = "pulteqfx"
+version = "0.1.0"
+edition = "2021"
+authors = ["Simon Huber <huber.simon@protonmail.com>"]
+license = "GPL-3.0-or-later"
+description = "PultEQFx, a circuit modelled passive program equalizer (CLAP/VST3)"
+
+[workspace]
+members = ["xtask"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "pulteqfx"
+required-features = ["standalone"]
+
+[features]
+# The standalone host is only for trying the plugin outside a DAW.
+default = []
+standalone = ["nih_plug/standalone"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "f36931f7af4646065488a9845d8f8c2f95252c23" }
+nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "f36931f7af4646065488a9845d8f8c2f95252c23" }
+
+# For reading and writing preset files.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+opt-level = 3
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
