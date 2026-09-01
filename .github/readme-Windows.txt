@@ -1,20 +1,29 @@
 PultEQFx
 ========
 
-CLAP
-  Copy PultEQFx.clap to
-    %COMMONPROGRAMFILES%\CLAP            (usually C:\Program Files\Common Files\CLAP)
-  or, for just your account, to
-    %LOCALAPPDATA%\Programs\Common\CLAP
+The easy way
+------------
+Run install.exe from this folder. It installs into
+Common Files\CLAP and Common Files\VST3 when run as administrator, and into
+your own AppData folder otherwise. Both are searched by every host.
 
-VST3
-  Copy the PultEQFx.vst3 folder to
-    %COMMONPROGRAMFILES%\VST3            (usually C:\Program Files\Common Files\VST3)
+install.exe is not code signed, so Windows SmartScreen will say the publisher
+is unknown. Signing certificates cost money every year, which this project
+does not have. Click "More info" and then "Run anyway", or install by hand
+using the steps below if you would rather not.
+
+By hand
+-------
+CLAP   copy PultEQFx.clap to
+         C:\Program Files\Common Files\CLAP
+VST3   copy the PultEQFx.vst3 folder to
+         C:\Program Files\Common Files\VST3
+
+Or, without administrator rights, into
+  %LOCALAPPDATA%\Programs\Common\CLAP
+  %LOCALAPPDATA%\Programs\Common\VST3
 
 Create the folder first if it does not exist.
-
-The plugin is not code signed, so Windows may warn about an unknown publisher.
-Signing certificates cost money every year, which this project does not have.
 
 If your DAW does not list CLAP plugins, see
 https://github.com/free-audio/clap#hosts

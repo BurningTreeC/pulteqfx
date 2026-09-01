@@ -7,7 +7,7 @@ license = "GPL-3.0-or-later"
 description = "PultEQFx, a circuit modelled passive program equalizer (CLAP/VST3)"
 
 [workspace]
-members = ["xtask"]
+members = ["installer", "xtask"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

@@ -32,7 +32,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
-      - run: cargo clippy --release --all-targets -- -D warnings
+      # --workspace so the installer that ships to users is linted too.
+      - run: cargo clippy --release --workspace --all-targets -- -D warnings
       - name: Third party notices are up to date
         run: |
           python3 tools/third-party-notices.py
@@ -68,6 +69,12 @@ jobs:
         with:
           key: ${{ matrix.name }}
 
+      - name: Build the installer
+        # A small dependency free program that copies the bundles into place,
+        # shipped in the Windows archive as install.exe.
+        if: startsWith(matrix.os, 'windows')
+        run: cargo build --release -p installer
+
       - name: Build the plugin
         run: |
           if [[ '${{ matrix.name }}' == 'macos-universal' ]]; then
@@ -92,10 +99,19 @@ jobs:
           # permissive licences of the dependencies require their notices.
           cp LICENSE THIRD-PARTY-NOTICES.md "$staged/"
           cp ".github/readme-${{ runner.os }}.txt" "$staged/README.txt"
-          if [[ '${{ runner.os }}' == 'macOS' ]]; then
-            cp .github/install-macOS.command "$staged/Install.command"
-            chmod +x "$staged/Install.command"
-          fi
+          case '${{ runner.os }}' in
+            Linux)
+              cp .github/install-Linux.sh "$staged/install.sh"
+              chmod +x "$staged/install.sh"
+              ;;
+            macOS)
+              cp .github/install-macOS.command "$staged/Install.command"
+              chmod +x "$staged/Install.command"
+              ;;
+            Windows)
+              cp target/release/install.exe "$staged/install.exe"
+              ;;
+          esac
           ls -la "$staged"
 
       - uses: actions/upload-artifact@v4
@@ -123,7 +139,7 @@ jobs:
           for dir in artifacts/*/; do
             name="$(basename "$dir")"
             # Executability is not preserved through the artifact round trip.
-            chmod +x "$dir/Install.command" 2>/dev/null || true
+            chmod +x "$dir/Install.command" "$dir/install.sh" 2>/dev/null || true
             (cd "$dir" && zip -qr "../../release/$name-${GITHUB_REF_NAME}.zip" .)
           done
           ls -la release
@@ -137,9 +153,10 @@ jobs:
             --notes-file - <<'NOTES'
           Built from this tag by GitHub Actions.
 
-          Download the archive for your platform, then follow `README.txt`
-          inside it. Every archive also contains `LICENSE` and
-          `THIRD-PARTY-NOTICES.md`.
+          Download the archive for your platform and run the installer inside
+          it: `install.sh` on Linux, `install.exe` on Windows,
+          `Install.command` on macOS. `README.txt` covers installing by hand.
+          Every archive also contains `LICENSE` and `THIRD-PARTY-NOTICES.md`.
 
           **macOS:** the plugins are ad-hoc signed but not notarized, so macOS
           quarantines them. `Install.command` in the archive puts them in place

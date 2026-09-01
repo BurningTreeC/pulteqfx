@@ -1,16 +1,23 @@
 PultEQFx
 ========
 
-CLAP
-  Copy PultEQFx.clap to        ~/.clap
-  or, for all users, to        /usr/lib/clap
+The easy way
+------------
+Run install.sh from this folder:
 
-VST3
-  Copy the PultEQFx.vst3 directory to   ~/.vst3
-  or, for all users, to                 /usr/lib/vst3
+  ./install.sh              install for you
+  ./install.sh --system     install for all users (run with sudo)
 
-Create the directory first if it does not exist. Many people keep plugins in
-a per-vendor subfolder, for example ~/.clap/BurningTreeC, which also works.
+It copies both plugins into ~/.clap/BurningTreeC and ~/.vst3/BurningTreeC.
+
+By hand
+-------
+CLAP   copy PultEQFx.clap to            ~/.clap
+VST3   copy the PultEQFx.vst3 folder to ~/.vst3
+
+For all users, use /usr/lib/clap and /usr/lib/vst3 instead. Create the
+directory first if it does not exist. A per-vendor subfolder such as
+~/.clap/BurningTreeC works too, and is what install.sh uses.
 
 If your DAW does not list CLAP plugins, see
 https://github.com/free-audio/clap#hosts

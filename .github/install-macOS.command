@@ -6,8 +6,10 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-clap_dir="$HOME/Library/Audio/Plug-Ins/CLAP"
-vst3_dir="$HOME/Library/Audio/Plug-Ins/VST3"
+# A folder named after the vendor, matching the Linux and Windows installers.
+readonly VENDOR="BurningTreeC"
+clap_dir="$HOME/Library/Audio/Plug-Ins/CLAP/$VENDOR"
+vst3_dir="$HOME/Library/Audio/Plug-Ins/VST3/$VENDOR"
 
 install_bundle() {
     local bundle="$1" dest="$2"

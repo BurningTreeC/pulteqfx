@@ -17,6 +17,9 @@ Copy the bundles (they are folders, copy the whole thing) to:
   CLAP   ~/Library/Audio/Plug-Ins/CLAP/PultEQFx.clap
   VST3   ~/Library/Audio/Plug-Ins/VST3/PultEQFx.vst3
 
+(Install.command puts them in a BurningTreeC subfolder of each, which hosts
+search just the same.)
+
 Then open Terminal and run:
 
   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/PultEQFx.clap
