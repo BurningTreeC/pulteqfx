@@ -131,7 +131,7 @@ fn load_user() -> Vec<Preset> {
             Some(preset)
         })
         .collect();
-    presets.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    presets.sort_by_key(|preset| preset.name.to_lowercase());
     presets
 }
 

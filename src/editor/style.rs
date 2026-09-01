@@ -30,8 +30,8 @@ pub const SELECTOR_RADIUS: f32 = 54.0;
 pub const SWEEP: f32 = 250.0;
 
 // The panel's dark petrol blue enamel, lit from above.
-pub const PANEL_TOP: u32 = 0x36_56_60;
-pub const PANEL_BOTTOM: u32 = 0x1e_35_3c;
+pub const PANEL_TOP: u32 = 0x365660;
+pub const PANEL_BOTTOM: u32 = 0x1e353c;
 
 
 pub fn rgb(hex: u32) -> vg::Color {
@@ -115,7 +115,7 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
     skirt.close();
     canvas.fill_path(
         &skirt,
-        &vg::Paint::linear_gradient(cx, cy - r, cx, cy + r, rgb(0x2b_2c_30), rgb(0x05_05_07)),
+        &vg::Paint::linear_gradient(cx, cy - r, cx, cy + r, rgb(0x2b2c30), rgb(0x050507)),
     );
     // The skirt falls away towards its edge.
     canvas.fill_path(
@@ -130,8 +130,8 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - r,
             cx + r * 0.4,
             cy + r * 0.7,
-            rgba(0xd8_e2_e8, 0.55),
-            rgba(0xd8_e2_e8, 0.0),
+            rgba(0xd8e2e8, 0.55),
+            rgba(0xd8e2e8, 0.0),
         )
         .with_line_width(r * 0.05),
     );
@@ -147,7 +147,7 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
     );
     canvas.stroke_path(
         &index,
-        &vg::Paint::color(rgb(0xf6_f3_ec)).with_line_width(r * 0.085),
+        &vg::Paint::color(rgb(0xf6f3ec)).with_line_width(r * 0.085),
     );
 
     // Step down from the skirt to the top of the knob.
@@ -163,8 +163,8 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - face,
             cx,
             cy + face,
-            rgba(0xdc_e6_ec, 0.95),
-            rgba(0x6a_74_7c, 0.45),
+            rgba(0xdce6ec, 0.95),
+            rgba(0x6a747c, 0.45),
         )
         .with_line_width(r * 0.055),
     );
@@ -180,8 +180,8 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - recess * 0.35,
             recess * 0.1,
             recess * 1.4,
-            rgb(0x33_34_39),
-            rgb(0x08_08_0a),
+            rgb(0x333439),
+            rgb(0x08080a),
         ),
     );
     // Light bouncing off the far wall of the recess.
@@ -196,7 +196,7 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
     );
     canvas.stroke_path(
         &bounce,
-        &vg::Paint::color(rgba(0xa8_b6_c0, 0.22)).with_line_width(recess * 0.10),
+        &vg::Paint::color(rgba(0xa8b6c0, 0.22)).with_line_width(recess * 0.10),
     );
 
     // The raised boss in the middle.
@@ -211,8 +211,8 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - boss,
             cx,
             cy + boss,
-            rgba(0x9c_a8_b2, 0.45),
-            rgba(0x30_34_38, 0.0),
+            rgba(0x9ca8b2, 0.45),
+            rgba(0x303438, 0.0),
         )
         .with_line_width(r * 0.035),
     );
@@ -223,8 +223,8 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - boss * 0.4,
             0.0,
             boss * 1.5,
-            rgb(0x2a_2b_2f),
-            rgb(0x07_07_09),
+            rgb(0x2a2b2f),
+            rgb(0x070709),
         ),
     );
     // A soft sheen on the boss.
@@ -237,8 +237,8 @@ pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - boss * 0.36,
             0.0,
             boss * 0.48,
-            rgba(0xff_ff_ff, 0.16),
-            rgba(0xff_ff_ff, 0.0),
+            rgba(0xffffff, 0.16),
+            rgba(0xffffff, 0.0),
         ),
     );
 }
@@ -260,8 +260,8 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
             cy - collar * 0.4,
             collar * 0.1,
             collar * 1.5,
-            rgb(0x6a_6e_74),
-            rgb(0x0c_0d_0f),
+            rgb(0x6a6e74),
+            rgb(0x0c0d0f),
         ),
     );
     canvas.stroke_path(
@@ -271,8 +271,8 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
             cy - collar,
             cx,
             cy + collar,
-            rgba(0xd0_d8_de, 0.5),
-            rgba(0x20_24_28, 0.0),
+            rgba(0xd0d8de, 0.5),
+            rgba(0x202428, 0.0),
         )
         .with_line_width(r * 0.06),
     );
@@ -299,7 +299,7 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
     );
     canvas.fill_path(
         &inset,
-        &vg::Paint::linear_gradient(-half, 0.0, half, 0.0, rgb(0x3a_3b_40), rgb(0x0b_0b_0d)),
+        &vg::Paint::linear_gradient(-half, 0.0, half, 0.0, rgb(0x3a3b40), rgb(0x0b0b0d)),
     );
 
     // The polished cap over the outer third, with the index stripe on it.
@@ -313,8 +313,8 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
             0.0,
             half,
             0.0,
-            rgb(0xd4_d8_dc),
-            rgb(0x5c_60_66),
+            rgb(0xd4d8dc),
+            rgb(0x5c6066),
         ),
     );
     let mut stripe = vg::Path::new();
@@ -322,11 +322,11 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
     stripe.line_to(0.0, -len * 0.985 + cap_len * 0.94);
     canvas.stroke_path(
         &stripe,
-        &vg::Paint::color(rgba(0x1c_1e_22, 0.85)).with_line_width(half * 0.34),
+        &vg::Paint::color(rgba(0x1c1e22, 0.85)).with_line_width(half * 0.34),
     );
     canvas.stroke_path(
         &stripe,
-        &vg::Paint::color(rgb(0xf6_f7_f8)).with_line_width(half * 0.18),
+        &vg::Paint::color(rgb(0xf6f7f8)).with_line_width(half * 0.18),
     );
 
     // Highlight down the lit edge of the body.
@@ -335,7 +335,7 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
     lit.line_to(-half * 0.72, -len * 0.55);
     canvas.stroke_path(
         &lit,
-        &vg::Paint::color(rgba(0xff_ff_ff, 0.16)).with_line_width(half * 0.30),
+        &vg::Paint::color(rgba(0xffffff, 0.16)).with_line_width(half * 0.30),
     );
 
     canvas.restore();
@@ -368,8 +368,8 @@ pub fn draw_screw(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - r * 0.50,
             r * 0.05,
             r * 1.35,
-            rgb(0xf4_f6_f8),
-            rgb(0x3c_40_46),
+            rgb(0xf4f6f8),
+            rgb(0x3c4046),
         ),
     );
     // Turned edge, bright where it faces the light.
@@ -380,8 +380,8 @@ pub fn draw_screw(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
             cy - r,
             cx,
             cy + r,
-            rgba(0xff_ff_ff, 0.45),
-            rgba(0x10_12_16, 0.85),
+            rgba(0xffffff, 0.45),
+            rgba(0x101216, 0.85),
         )
         .with_line_width(r * 0.20),
     );
@@ -397,7 +397,7 @@ pub fn draw_screw(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
     slot.line_to(cx + r * 0.78 * sa, cy - r * 0.78 * ca);
     canvas.stroke_path(
         &slot,
-        &vg::Paint::color(rgba(0x14_16_1a, 0.95)).with_line_width(r * 0.30),
+        &vg::Paint::color(rgba(0x14161a, 0.95)).with_line_width(r * 0.30),
     );
     // The lit lower lip of the slot.
     let mut lip = vg::Path::new();
@@ -405,7 +405,7 @@ pub fn draw_screw(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
     lip.line_to(cx + r * 0.74 * sa + ca * r * 0.13, cy - r * 0.74 * ca + sa * r * 0.13);
     canvas.stroke_path(
         &lip,
-        &vg::Paint::color(rgba(0xff_ff_ff, 0.30)).with_line_width(r * 0.07),
+        &vg::Paint::color(rgba(0xffffff, 0.30)).with_line_width(r * 0.07),
     );
 }
 
@@ -420,8 +420,8 @@ pub fn draw_rack_slot(canvas: &mut Canvas, cx: f32, cy: f32, w: f32, h: f32) {
             cy - h / 2.0,
             cx,
             cy + h / 2.0,
-            rgb(0xd8_dc_de),
-            rgb(0xa4_ab_af),
+            rgb(0xd8dcde),
+            rgb(0xa4abaf),
         ),
     );
     canvas.stroke_path(

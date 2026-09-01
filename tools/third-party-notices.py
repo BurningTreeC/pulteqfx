@@ -208,7 +208,7 @@ def elect(expression):
 def canonical_bodies(packages):
     """One full text per licence, taken from a crate that ships it."""
     bodies = {}
-    for package in sorted(packages, key=lambda p: p["name"]):
+    for package in packages:
         expression = package.get("license") or ""
         for name, text in licence_texts(package).items():
             stem = name.upper().replace("LICENCE", "LICENSE")
@@ -228,7 +228,9 @@ def canonical_bodies(packages):
 
 def main():
     meta = metadata()
-    packages = sorted(linked_packages(meta), key=lambda p: p["name"].lower())
+    packages = sorted(
+        linked_packages(meta), key=lambda p: (p["name"].lower(), p["version"])
+    )
 
     groups = {}
     for package in packages:

@@ -55,8 +55,8 @@ impl View for Faceplate {
                 b.y + b.h * 0.06,
                 0.0,
                 b.h * 1.8,
-                rgba(0xff_ff_ff, 0.085),
-                rgba(0xff_ff_ff, 0.0),
+                rgba(0xffffff, 0.085),
+                rgba(0xffffff, 0.0),
             ),
         );
 
@@ -64,7 +64,7 @@ impl View for Faceplate {
         let lines = (b.h / (3.0 * scale)).max(1.0) as usize;
         for i in 0..lines {
             let y = b.y + (i as f32 + 0.5) * b.h / lines as f32;
-            let shade = if i % 2 == 0 { 0x000000 } else { 0xff_ff_ff };
+            let shade = if i % 2 == 0 { 0x000000 } else { 0xffffff };
             let mut line = vg::Path::new();
             line.move_to(b.x, y);
             line.line_to(b.x + b.w, y);
@@ -112,7 +112,7 @@ impl View for Faceplate {
         top.line_to(b.x + b.w, b.y + scale);
         canvas.stroke_path(
             &top,
-            &vg::Paint::color(rgba(0xff_ff_ff, 0.24)).with_line_width(scale * 2.0),
+            &vg::Paint::color(rgba(0xffffff, 0.24)).with_line_width(scale * 2.0),
         );
         let mut bottom = vg::Path::new();
         bottom.move_to(b.x, b.y + b.h - scale);

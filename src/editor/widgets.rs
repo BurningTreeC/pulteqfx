@@ -40,7 +40,7 @@ impl Knob {
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params.clone(), params_to_param),
+            param: ParamWidgetBase::new(cx, params, params_to_param),
             radius,
             dragging: false,
             last_y: 0.0,
@@ -182,7 +182,7 @@ impl Selector {
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params.clone(), params_to_param),
+            param: ParamWidgetBase::new(cx, params, params_to_param),
             radius,
             positions,
             pointer,
@@ -308,7 +308,7 @@ impl Toggle {
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params.clone(), params_to_param),
+            param: ParamWidgetBase::new(cx, params, params_to_param),
         }
         .build(
             cx,
@@ -359,8 +359,8 @@ impl View for Toggle {
                 my - nut * 0.4,
                 nut * 0.1,
                 nut * 1.5,
-                rgb(0xe6_e9_ec),
-                rgb(0x3e_42_47),
+                rgb(0xe6e9ec),
+                rgb(0x3e4247),
             ),
         );
         canvas.stroke_path(
@@ -377,8 +377,8 @@ impl View for Toggle {
                 my - nut * 0.25,
                 0.0,
                 nut * 0.9,
-                rgb(0x8e_93_99),
-                rgb(0x1c_1f_23),
+                rgb(0x8e9399),
+                rgb(0x1c1f23),
             ),
         );
 
@@ -404,8 +404,8 @@ impl View for Toggle {
                 my,
                 mx + width,
                 my,
-                rgb(0x4c_4d_53),
-                rgb(0x0c_0c_0e),
+                rgb(0x4c4d53),
+                rgb(0x0c0c0e),
             )
             .with_line_width(width * 2.0)
             .with_line_cap(vg::LineCap::Round),
@@ -416,20 +416,20 @@ impl View for Toggle {
         gloss.line_to(mx - width * 0.42, tip_y - lean * width * 0.7);
         canvas.stroke_path(
             &gloss,
-            &vg::Paint::color(rgba(0xff_ff_ff, 0.13))
+            &vg::Paint::color(rgba(0xffffff, 0.13))
                 .with_line_width(width * 0.85)
                 .with_line_cap(vg::LineCap::Round),
         );
         canvas.stroke_path(
             &gloss,
-            &vg::Paint::color(rgba(0xff_ff_ff, 0.16))
+            &vg::Paint::color(rgba(0xffffff, 0.16))
                 .with_line_width(width * 0.35)
                 .with_line_cap(vg::LineCap::Round),
         );
         // Highlight on the tip.
         let mut glint = vg::Path::new();
         glint.ellipse(mx - width * 0.30, tip_y - lean * width * 0.30, width * 0.42, width * 0.30);
-        canvas.fill_path(&glint, &vg::Paint::color(rgba(0xff_ff_ff, 0.45)));
+        canvas.fill_path(&glint, &vg::Paint::color(rgba(0xffffff, 0.45)));
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
@@ -476,7 +476,7 @@ impl Lamp {
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params.clone(), params_to_param),
+            param: ParamWidgetBase::new(cx, params, params_to_param),
         }
         .build(
             cx,
@@ -520,8 +520,8 @@ impl View for Lamp {
                     my,
                     r * 0.8,
                     r * 2.3,
-                    rgba(0xff_3a_18, 0.30),
-                    rgba(0xff_3a_18, 0.0),
+                    rgba(0xff3a18, 0.30),
+                    rgba(0xff3a18, 0.0),
                 ),
             );
         }
@@ -539,8 +539,8 @@ impl View for Lamp {
                 my - r,
                 mx + r * 0.6,
                 my + r,
-                rgb(0xd2_d5_d8),
-                rgb(0x44_47_4b),
+                rgb(0xd2d5d8),
+                rgb(0x44474b),
             ),
         );
         // Brushing across the bezel.
@@ -552,7 +552,7 @@ impl View for Lamp {
             line.line_to(mx + r, y);
             canvas.stroke_path(
                 &line,
-                &vg::Paint::color(rgba(if i % 2 == 0 { 0xff_ff_ff } else { 0x000000 }, 0.07))
+                &vg::Paint::color(rgba(if i % 2 == 0 { 0xffffff } else { 0x000000 }, 0.07))
                     .with_line_width(r * 0.10),
             );
         }
@@ -565,13 +565,13 @@ impl View for Lamp {
         let jewel = r * 0.72;
         let mut seat = vg::Path::new();
         seat.circle(mx, my, jewel * 1.10);
-        canvas.fill_path(&seat, &vg::Paint::color(rgba(0x10_08_06, 0.9)));
+        canvas.fill_path(&seat, &vg::Paint::color(rgba(0x100806, 0.9)));
 
         // The cut glass jewel: radial facets around a bright core.
         let (core, edge, facet) = if lit {
-            (rgb(0xff_46_2a), rgb(0x8e_04_04), 0.30)
+            (rgb(0xff462a), rgb(0x8e0404), 0.30)
         } else {
-            (rgb(0x74_18_14), rgb(0x28_06_06), 0.18)
+            (rgb(0x741814), rgb(0x280606), 0.18)
         };
         let mut glass = vg::Path::new();
         glass.circle(mx, my, jewel);
@@ -594,7 +594,7 @@ impl View for Lamp {
             let mut cut = vg::Path::new();
             cut.move_to(mx + jewel * 0.22 * sa, my - jewel * 0.22 * ca);
             cut.line_to(mx + jewel * 0.98 * sa, my - jewel * 0.98 * ca);
-            let shade = if i % 2 == 0 { 0xff_d8_c0 } else { 0x38_00_00 };
+            let shade = if i % 2 == 0 { 0xffd8c0 } else { 0x380000 };
             canvas.stroke_path(
                 &cut,
                 &vg::Paint::color(rgba(shade, facet * 0.30)).with_line_width(jewel * 0.07),
@@ -610,8 +610,8 @@ impl View for Lamp {
                 my - jewel * 0.34,
                 0.0,
                 jewel * 0.46,
-                rgba(0xff_ff_ff, if lit { 0.45 } else { 0.25 }),
-                rgba(0xff_ff_ff, 0.0),
+                rgba(0xffffff, if lit { 0.45 } else { 0.25 }),
+                rgba(0xffffff, 0.0),
             ),
         );
     }

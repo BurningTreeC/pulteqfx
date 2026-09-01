@@ -67,11 +67,11 @@ Regenerate this file with `python3 tools/third-party-notices.py`.
 - **concurrent-queue** 2.5.0 <https://github.com/smol-rs/concurrent-queue>
 - **equivalent** 1.0.2 <https://github.com/indexmap-rs/equivalent>
   - Copyright (c) 2016--2023
-- **event-listener** 5.4.2 <https://github.com/smol-rs/event-listener>
 - **event-listener** 2.5.3 <https://github.com/smol-rs/event-listener>
+- **event-listener** 5.4.2 <https://github.com/smol-rs/event-listener>
 - **event-listener-strategy** 0.5.4 <https://github.com/smol-rs/event-listener-strategy>
-- **fastrand** 2.5.0 <https://github.com/smol-rs/fastrand>
 - **fastrand** 1.9.0 <https://github.com/smol-rs/fastrand>
+- **fastrand** 2.5.0 <https://github.com/smol-rs/fastrand>
 - **fluent-bundle** 0.15.3 <https://github.com/projectfluent/fluent-rs>
   - Copyright 2017 Mozilla
 - **fluent-langneg** 0.13.1 <https://github.com/projectfluent/fluent-langneg-rs>
@@ -79,10 +79,10 @@ Regenerate this file with `python3 tools/third-party-notices.py`.
   - Copyright 2017 Mozilla
 - **fnv** 1.0.7 <https://github.com/servo/rust-fnv>
   - Copyright (c) 2017 Contributors
-- **futures-lite** 2.6.1 <https://github.com/smol-rs/futures-lite>
+- **futures-lite** 1.13.0 <https://github.com/smol-rs/futures-lite>
   - Copyright (c) 2016 Alex Crichton
   - Copyright (c) 2017 The Tokio Authors
-- **futures-lite** 1.13.0 <https://github.com/smol-rs/futures-lite>
+- **futures-lite** 2.6.1 <https://github.com/smol-rs/futures-lite>
   - Copyright (c) 2016 Alex Crichton
   - Copyright (c) 2017 The Tokio Authors
 - **fxhash** 0.2.1 <https://github.com/cbreeden/fxhash>
@@ -97,8 +97,8 @@ Regenerate this file with `python3 tools/third-party-notices.py`.
   - Copyright 2014-2020 The Rust Project Developers
 - **pin-project-lite** 0.2.17 <https://github.com/taiki-e/pin-project-lite>
 - **polling** 2.8.0 <https://github.com/smol-rs/polling>
-- **rustc-hash** 2.1.3 <https://github.com/rust-lang/rustc-hash>
 - **rustc-hash** 1.1.0 <https://github.com/rust-lang-nursery/rustc-hash>
+- **rustc-hash** 2.1.3 <https://github.com/rust-lang/rustc-hash>
 - **swash** 0.1.19 <https://github.com/dfrg/swash>
   - Copyright (c) 2020 Chad Brokaw
 - **waker-fn** 1.2.0 <https://github.com/smol-rs/waker-fn>
@@ -187,25 +187,25 @@ Regenerate this file with `python3 tools/third-party-notices.py`.
   - Copyright (c) 2016 Jerome Froelich
 - **matches** 0.1.10 <https://github.com/SimonSapin/rust-std-candidates>
   - Copyright (c) 2014-2016 Simon Sapin
-- **memoffset** 0.7.1 <https://github.com/Gilnaa/memoffset>
-  - Copyright (c) 2017 Gilad Naaman
 - **memoffset** 0.6.5 <https://github.com/Gilnaa/memoffset>
+  - Copyright (c) 2017 Gilad Naaman
+- **memoffset** 0.7.1 <https://github.com/Gilnaa/memoffset>
   - Copyright (c) 2017 Gilad Naaman
 - **mio** 0.8.11 <https://github.com/tokio-rs/mio>
   - Copyright (c) 2014 Carl Lerche and other MIO contributors
 - **morphorm** 0.6.5 <https://github.com/vizia/morphorm>
   - Copyright (c) 2021 George Atkinson
-- **nix** 0.26.4 <https://github.com/nix-rust/nix>
-  - Copyright (c) 2015 Carl Lerche + nix-rust Authors
 - **nix** 0.22.3 <https://github.com/nix-rust/nix>
   - Copyright (c) 2015 Carl Lerche + nix-rust Authors
 - **nix** 0.24.3 <https://github.com/nix-rust/nix>
   - Copyright (c) 2015 Carl Lerche + nix-rust Authors
+- **nix** 0.26.4 <https://github.com/nix-rust/nix>
+  - Copyright (c) 2015 Carl Lerche + nix-rust Authors
 - **phf** 0.10.1 <https://github.com/sfackler/rust-phf>
 - **phf** 0.8.0 <https://github.com/sfackler/rust-phf>
 - **phf_codegen** 0.8.0 <https://github.com/sfackler/rust-phf>
-- **phf_generator** 0.8.0 <https://github.com/sfackler/rust-phf>
 - **phf_generator** 0.10.0 <https://github.com/sfackler/rust-phf>
+- **phf_generator** 0.8.0 <https://github.com/sfackler/rust-phf>
 - **phf_macros** 0.10.0 <https://github.com/sfackler/rust-phf>
 - **phf_shared** 0.10.0 <https://github.com/sfackler/rust-phf>
 - **phf_shared** 0.8.0 <https://github.com/sfackler/rust-phf>
@@ -483,9 +483,9 @@ Regenerate this file with `python3 tools/third-party-notices.py`.
   - Copyright (c) 2014 Alex Crichton
 - **static_assertions** 1.1.0 <https://github.com/nvzqz/static-assertions-rs>
   - Copyright (c) 2017 Nikolai Vazquez
+- **syn** 1.0.109 <https://github.com/dtolnay/syn>
 - **syn** 2.0.119 <https://github.com/dtolnay/syn>
 - **syn** 3.0.4 <https://github.com/dtolnay/syn>
-- **syn** 1.0.109 <https://github.com/dtolnay/syn>
 - **sys-locale** 0.3.2 <https://github.com/1Password/sys-locale>
   - Copyright (c) 2021 1Password
 - **thiserror** 1.0.69 <https://github.com/dtolnay/thiserror>
@@ -495,9 +495,9 @@ Regenerate this file with `python3 tools/third-party-notices.py`.
 - **time-macros** 0.2.32 <https://github.com/time-rs/time>
 - **toml_datetime** 0.6.11 <https://github.com/toml-rs/toml>
 - **toml_edit** 0.19.15 <https://github.com/toml-rs/toml>
-- **ttf-parser** 0.19.2 <https://github.com/RazrFalcon/ttf-parser>
-  - Copyright (c) 2018 Yevhenii Reizner
 - **ttf-parser** 0.18.1 <https://github.com/RazrFalcon/ttf-parser>
+  - Copyright (c) 2018 Yevhenii Reizner
+- **ttf-parser** 0.19.2 <https://github.com/RazrFalcon/ttf-parser>
   - Copyright (c) 2018 Yevhenii Reizner
 - **type-map** 0.5.1 <https://github.com/kardeiz/type-map>
   - Copyright 2017-NOW Actix Team

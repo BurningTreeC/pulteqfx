@@ -5,6 +5,10 @@
 //! window scale, the oversampling quality and the amplifier's drive and output
 //! trim.
 
+// Views are constructed with `new` returning a `Handle`, which is how vizia
+// widgets are written throughout, including NIH-plug's own.
+#![allow(clippy::new_ret_no_self)]
+
 use nih_plug::prelude::{Param, ParamPtr, Params};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
@@ -322,8 +326,8 @@ impl View for Header {
                 b.y,
                 b.x,
                 b.y + b.h,
-                rgb(0x1d_21_25),
-                rgb(0x0d_0f_12),
+                rgb(0x1d2125),
+                rgb(0x0d0f12),
             ),
         );
         let mut edge = vg::Path::new();
@@ -356,7 +360,7 @@ impl View for GearButton {
         let b = cx.bounds();
         let (mx, my) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
         let r = b.w.min(b.h) * 0.40;
-        let paint = vg::Paint::color(rgb(0xa8_b4_be));
+        let paint = vg::Paint::color(rgb(0xa8b4be));
 
         // Teeth.
         const TEETH: usize = 8;
@@ -373,7 +377,7 @@ impl View for GearButton {
         canvas.fill_path(&ring, &paint);
         let mut hole = vg::Path::new();
         hole.circle(mx, my, r * 0.34);
-        canvas.fill_path(&hole, &vg::Paint::color(rgb(0x14_17_1a)));
+        canvas.fill_path(&hole, &vg::Paint::color(rgb(0x14171a)));
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
@@ -458,7 +462,7 @@ impl View for Dismiss {
         let b = cx.bounds();
         let mut sheet = vg::Path::new();
         sheet.rect(b.x, b.y, b.w, b.h);
-        canvas.fill_path(&sheet, &vg::Paint::color(rgba(0x00_04_08, 0.45)));
+        canvas.fill_path(&sheet, &vg::Paint::color(rgba(0x000408, 0.45)));
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
@@ -500,11 +504,11 @@ fn card(canvas: &mut Canvas, b: BoundingBox, scale: f32) {
     card.rounded_rect(b.x, b.y, b.w, b.h, 6.0 * scale);
     canvas.fill_path(
         &card,
-        &vg::Paint::linear_gradient(b.x, b.y, b.x, b.y + b.h, rgb(0x23_28_2d), rgb(0x16_1a_1e)),
+        &vg::Paint::linear_gradient(b.x, b.y, b.x, b.y + b.h, rgb(0x23282d), rgb(0x161a1e)),
     );
     canvas.stroke_path(
         &card,
-        &vg::Paint::color(rgba(0xff_ff_ff, 0.10)).with_line_width(scale),
+        &vg::Paint::color(rgba(0xffffff, 0.10)).with_line_width(scale),
     );
 }
 
@@ -658,7 +662,7 @@ impl View for MenuItem {
             let b = cx.bounds();
             let mut row = vg::Path::new();
             row.rounded_rect(b.x + 2.0, b.y + 1.0, b.w - 4.0, b.h - 2.0, 3.0);
-            canvas.fill_path(&row, &vg::Paint::color(rgba(0x4a_7c_8c, 0.55)));
+            canvas.fill_path(&row, &vg::Paint::color(rgba(0x4a7c8c, 0.55)));
         }
     }
 
@@ -736,7 +740,7 @@ impl View for Segments {
         field(canvas, b, scale);
 
         let count = OVERSAMPLING.len();
-        let selected = (self.param.modulated_normalized_value() * (count - 1) as f32).round() as f32;
+        let selected = (self.param.modulated_normalized_value() * (count - 1) as f32).round();
         let seg = b.w / count as f32;
         let mut pill = vg::Path::new();
         pill.rounded_rect(
@@ -746,7 +750,7 @@ impl View for Segments {
             b.h - 4.0 * scale,
             3.0 * scale,
         );
-        canvas.fill_path(&pill, &vg::Paint::color(rgba(0x4a_7c_8c, 0.75)));
+        canvas.fill_path(&pill, &vg::Paint::color(rgba(0x4a7c8c, 0.75)));
         let _ = self.width;
     }
 
@@ -794,10 +798,10 @@ impl View for SegmentHit {
 fn field(canvas: &mut Canvas, b: BoundingBox, scale: f32) {
     let mut path = vg::Path::new();
     path.rounded_rect(b.x, b.y, b.w, b.h, 4.0 * scale);
-    canvas.fill_path(&path, &vg::Paint::color(rgb(0x11_15_19)));
+    canvas.fill_path(&path, &vg::Paint::color(rgb(0x111519)));
     canvas.stroke_path(
         &path,
-        &vg::Paint::color(rgba(0xff_ff_ff, 0.12)).with_line_width(scale),
+        &vg::Paint::color(rgba(0xffffff, 0.12)).with_line_width(scale),
     );
 }
 
@@ -809,7 +813,7 @@ fn caret(canvas: &mut Canvas, x: f32, y: f32, scale: f32) {
     path.line_to(x + s, y - s * 0.5);
     canvas.stroke_path(
         &path,
-        &vg::Paint::color(rgb(0x9e_ac_b8)).with_line_width(1.6 * scale),
+        &vg::Paint::color(rgb(0x9eacb8)).with_line_width(1.6 * scale),
     );
 }
 
@@ -859,7 +863,7 @@ impl View for PresetButton {
         if panel_modified(cx) {
             let mut dot = vg::Path::new();
             dot.circle(b.x + b.w - 30.0 * scale, b.y + b.h / 2.0, 3.2 * scale);
-            canvas.fill_path(&dot, &vg::Paint::color(rgb(0xe0_a3_43)));
+            canvas.fill_path(&dot, &vg::Paint::color(rgb(0xe0a343)));
         }
 
         caret(canvas, b.x + b.w - 16.0 * scale, b.y + b.h / 2.0, scale);
@@ -968,7 +972,7 @@ impl View for PresetItem {
             let b = cx.bounds();
             let mut row = vg::Path::new();
             row.rounded_rect(b.x + 2.0, b.y + 1.0, b.w - 4.0, b.h - 2.0, 3.0);
-            canvas.fill_path(&row, &vg::Paint::color(rgba(0x4a_7c_8c, 0.55)));
+            canvas.fill_path(&row, &vg::Paint::color(rgba(0x4a7c8c, 0.55)));
         }
     }
 
@@ -1000,7 +1004,7 @@ impl View for SaveButton {
         let b = cx.bounds();
         let s = b.w.min(b.h) * 0.78;
         let (x, y) = (b.x + (b.w - s) / 2.0, b.y + (b.h - s) / 2.0);
-        let ink = vg::Paint::color(rgb(0xa8_b4_be));
+        let ink = vg::Paint::color(rgb(0xa8b4be));
 
         let mut body = vg::Path::new();
         body.rounded_rect(x, y, s, s, s * 0.12);
@@ -1131,7 +1135,7 @@ impl View for Shade {
         let b = cx.bounds();
         let mut sheet = vg::Path::new();
         sheet.rect(b.x, b.y, b.w, b.h);
-        canvas.fill_path(&sheet, &vg::Paint::color(rgba(0x00_04_08, 0.62)));
+        canvas.fill_path(&sheet, &vg::Paint::color(rgba(0x000408, 0.62)));
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
@@ -1250,14 +1254,14 @@ impl View for DialogButton {
         if self.accent {
             canvas.fill_path(
                 &path,
-                &vg::Paint::linear_gradient(b.x, b.y, b.x, b.y + b.h, rgb(0x59_8e_a0), rgb(0x3a_66_76)),
+                &vg::Paint::linear_gradient(b.x, b.y, b.x, b.y + b.h, rgb(0x598ea0), rgb(0x3a6676)),
             );
         } else {
-            canvas.fill_path(&path, &vg::Paint::color(rgb(0x2c_32_38)));
+            canvas.fill_path(&path, &vg::Paint::color(rgb(0x2c3238)));
         }
         canvas.stroke_path(
             &path,
-            &vg::Paint::color(rgba(0xff_ff_ff, 0.14)).with_line_width(scale),
+            &vg::Paint::color(rgba(0xffffff, 0.14)).with_line_width(scale),
         );
     }
 
