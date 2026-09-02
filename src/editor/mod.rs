@@ -234,7 +234,14 @@ pub fn label_box(
         .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
         .font_weight(FontWeightKeyword::Bold)
         .font_size(size)
-        .color(Color::rgba(r, g, b, a));
+        .color(Color::rgba(r, g, b, a))
+        // Lettering is never the thing being clicked, and leaving it in the
+        // way of the pointer breaks whatever it is drawn over. These labels
+        // are positioned on top of the controls they annotate, and a later
+        // sibling is the one the hit test finds -- events then travel up to
+        // parents, never sideways to the control underneath. That is why the
+        // oversampling switch could not be clicked at all.
+        .hoverable(false);
 }
 
 /// The 0 to 10 scale engraved around a large knob.
