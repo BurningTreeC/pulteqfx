@@ -11,6 +11,7 @@
 //! the oversampling setting and the amplifier's drive and output trim.
 
 mod panel;
+mod sprites;
 mod settings;
 mod style;
 mod widgets;
@@ -106,8 +107,8 @@ fn faceplate(cx: &mut Context) {
         .place(ATTEN_SEL_X, TOP_ROW, R_SELECTOR);
 
     // --- lower row ----------------------------------------------------------
-    small_engraved(cx, "IN", EQ_SWITCH_X, 202.0, 9.0);
-    small_engraved(cx, "OUT", EQ_SWITCH_X, 275.0, 9.0);
+    small_engraved(cx, "IN", EQ_SWITCH_X, 194.0, 9.0);
+    small_engraved(cx, "OUT", EQ_SWITCH_X, 296.0, 9.0);
     Toggle::new(cx, Panel::params, |p| &p.eq_in)
         .position_type(PositionType::SelfDirected)
         .left(Pixels(EQ_SWITCH_X - 17.0))

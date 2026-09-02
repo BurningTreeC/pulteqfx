@@ -1,13 +1,13 @@
 [package]
 name = "pulteqfx"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Simon Huber <huber.simon@protonmail.com>"]
 license = "GPL-3.0-or-later"
 description = "PultEQFx, a circuit modelled passive program equalizer (CLAP/VST3)"
 
 [workspace]
-members = ["installer", "xtask"]
+members = ["assetgen", "installer", "xtask"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

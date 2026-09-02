@@ -48,16 +48,27 @@ impl Data for Menu {
 }
 
 /// Which modal dialog, if any, is showing.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Dialog {
     None,
     /// Asking for a name to save under.
     Name,
     /// Asking whether to replace a preset that already exists.
     Overwrite,
+    /// Asking whether to delete one of your own presets. Carries the name
+    /// rather than the row: an index re-resolved when the dialog is answered
+    /// is how you end up deleting something other than what was asked for.
+    Delete(String),
 }
 
 impl Data for Dialog {
+    fn same(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+/// So the preset list can be bound to and rebuilt when it changes.
+impl Data for Preset {
     fn same(&self, other: &Self) -> bool {
         self == other
     }
@@ -73,6 +84,10 @@ pub struct UiState {
     pub presets: Vec<Preset>,
     /// Name on the preset button.
     pub current: String,
+    /// Whether what is loaded is the factory preset of that name. A saved
+    /// preset may share a name with a factory one, so the name alone does not
+    /// say which row in the list is the one showing.
+    pub current_built_in: bool,
     /// The values of the preset named above, kept so the panel can tell
     /// whether anything has been turned since it was loaded.
     pub reference: BTreeMap<String, f32>,
@@ -90,6 +105,10 @@ pub enum UiEvent {
     SetScale(f64),
     TogglePresetMenu,
     LoadPreset(usize),
+    /// Ask before throwing away one of the saved presets.
+    AskDelete(usize),
+    /// Confirmed: throw it away. Built-in ones have no file and are refused.
+    DeletePreset(String),
     OpenSaveDialog,
     NameEdited(String),
     /// Save under the name in the field, asking first if it is taken.
@@ -105,9 +124,14 @@ impl UiState {
         // A reopened session remembers which preset it was set from, so pick
         // its values back up to compare against.
         let saved = params.preset_name();
-        let reference = presets
+        // Yours wins a tie: it is the one you made, and the factory preset of
+        // that name is still there in the list either way.
+        let restored = presets
             .iter()
-            .find(|preset| preset.name == saved)
+            .find(|preset| preset.name == saved && !preset.built_in)
+            .or_else(|| presets.iter().find(|preset| preset.name == saved));
+        let current_built_in = restored.is_some_and(|preset| preset.built_in);
+        let reference = restored
             .map(|preset| preset.values.clone())
             .unwrap_or_default();
         let current = if saved.is_empty() {
@@ -123,6 +147,7 @@ impl UiState {
             dialog: Dialog::None,
             presets,
             current,
+            current_built_in,
             reference,
             name: String::new(),
             error: String::new(),
@@ -156,6 +181,9 @@ impl UiState {
                 self.reference = preset.values.clone();
                 self.params.set_preset_name(&name);
                 self.current = name;
+                // What is showing is now the file just written, not the
+                // factory preset that may share its name.
+                self.current_built_in = false;
                 self.dialog = Dialog::None;
                 self.error.clear();
             }
@@ -198,9 +226,47 @@ impl Model for UiState {
                     self.menu = Menu::None;
                     if let Some(preset) = self.presets.get(*index).cloned() {
                         self.current = preset.name.clone();
+                        self.current_built_in = preset.built_in;
                         self.reference = preset.values.clone();
                         self.params.set_preset_name(&preset.name);
                         self.apply(cx, &preset);
+                    }
+                }
+                UiEvent::AskDelete(index) => {
+                    // Deleting removes a file and there is no undo, so it goes
+                    // through the same confirmation as replacing one.
+                    if let Some(preset) = self.presets.get(*index) {
+                        if !preset.built_in {
+                            self.dialog = Dialog::Delete(preset.name.clone());
+                            self.menu = Menu::None;
+                        }
+                    }
+                }
+                UiEvent::DeletePreset(name) => {
+                    self.dialog = Dialog::None;
+                    let name = name.clone();
+                    // Looked up by name, and refused for anything compiled in:
+                    // a factory preset has no file, and the list would only
+                    // put it straight back.
+                    let ours = self
+                        .presets
+                        .iter()
+                        .any(|preset| !preset.built_in && preset.name == name);
+                    if ours {
+                        match presets::delete(&name) {
+                            Ok(()) => {
+                                self.presets = presets::load_all(&*self.params);
+                                // Nothing is loaded any more if what was
+                                // loaded has just been thrown away.
+                                if self.current == name {
+                                    self.current = String::from(NO_PRESET);
+                                    self.reference.clear();
+                                    self.params.set_preset_name("");
+                                }
+                                self.error.clear();
+                            }
+                            Err(err) => self.error = format!("could not delete: {err}"),
+                        }
                     }
                 }
                 UiEvent::OpenSaveDialog => {
@@ -429,7 +495,12 @@ impl SettingsOverlay {
             if menu.get(cx) == Menu::Preset {
                 // Clicking anywhere else puts the list away again.
                 Dismiss::new(cx, false);
-                PresetMenu::new(cx);
+                // Rebuilt whenever the presets change, so deleting one takes
+                // its row out from under the pointer instead of leaving a
+                // stale list whose indices no longer line up.
+                Binding::new(cx, UiState::presets, |cx, _| {
+                    PresetMenu::new(cx);
+                });
             }
         });
     }
@@ -593,6 +664,21 @@ impl View for ScaleButton {
     }
 }
 
+/// How tall the open list is, and where it starts.
+const MENU_H: f32 = SCALES.len() as f32 * ROW_H + 8.0;
+
+/// Where the open list sits.
+///
+/// It would rather hang directly under the button, but a plugin editor cannot
+/// draw outside its own window: the canvas is the window the host gave it, so
+/// a list running past the bottom edge is cut off rather than overhanging.
+/// This panel is tall enough today that the list fits as it is, but the
+/// clamp costs nothing and keeps the last scale reachable if it ever is not.
+fn menu_top() -> f32 {
+    let under_button = PANEL_Y + 48.0 + ROW_H / 2.0 + 3.0;
+    under_button.clamp(6.0, WINDOW_H - MENU_H - 6.0)
+}
+
 /// The list of scales, drawn above everything else when the button is pressed.
 struct ScaleMenu;
 
@@ -617,9 +703,9 @@ impl MenuBackdrop {
         })
         .position_type(PositionType::SelfDirected)
         .left(Pixels(PANEL_X + PANEL_WIDTH - 116.0))
-        .top(Pixels(PANEL_Y + 48.0 + ROW_H / 2.0 + 3.0))
+        .top(Pixels(menu_top()))
         .width(Pixels(102.0))
-        .height(Pixels(SCALES.len() as f32 * ROW_H + 8.0))
+        .height(Pixels(MENU_H))
     }
 }
 
@@ -951,6 +1037,8 @@ impl PresetItem {
                     .color(Color::rgb(0xe4, 0xea, 0xf0));
                 if built_in {
                     label_box(cx, "factory", PRESET_W - 44.0, ROW_H / 2.0, 9.0, 60.0, 0x76, 0x86, 0x92, 255);
+                } else {
+                    DeleteButton::new(cx, index);
                 }
             })
             .position_type(PositionType::SelfDirected)
@@ -961,12 +1049,96 @@ impl PresetItem {
     }
 }
 
+/// The cross at the right of one of your own presets. Sits inside the row, so
+/// it has to swallow the click: without that the row underneath would load the
+/// preset on the way past, and the list would be rebuilt around a preset that
+/// no longer exists.
+struct DeleteButton {
+    index: usize,
+    /// Tracked here rather than read from the draw context, which does not
+    /// expose it.
+    hot: bool,
+}
+
+impl DeleteButton {
+    fn new(cx: &mut Context, index: usize) -> Handle<'_, Self> {
+        Self { index, hot: false }
+            .build(cx, |_| {})
+            .position_type(PositionType::SelfDirected)
+            .left(Pixels(PRESET_W - 30.0))
+            .top(Pixels((ROW_H - 16.0) / 2.0))
+            .width(Pixels(16.0))
+            .height(Pixels(16.0))
+    }
+}
+
+impl View for DeleteButton {
+    fn element(&self) -> Option<&'static str> {
+        Some("preset-delete")
+    }
+
+    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+        let b = cx.bounds();
+        let scale = cx.scale_factor();
+        let hot = self.hot;
+        let (mx, my) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+
+        if hot {
+            let mut disc = vg::Path::new();
+            disc.circle(mx, my, b.w * 0.5);
+            canvas.fill_path(&disc, &vg::Paint::color(rgba(0xc0392b, 0.85)));
+        }
+
+        let arm = b.w * 0.24;
+        let mut cross = vg::Path::new();
+        cross.move_to(mx - arm, my - arm);
+        cross.line_to(mx + arm, my + arm);
+        cross.move_to(mx + arm, my - arm);
+        cross.line_to(mx - arm, my + arm);
+        let ink = if hot {
+            rgba(0xffffff, 0.95)
+        } else {
+            rgba(0x9aa6b0, 0.75)
+        };
+        canvas.stroke_path(
+            &cross,
+            &vg::Paint::color(ink)
+                .with_line_width(1.6 * scale)
+                .with_line_cap(vg::LineCap::Round),
+        );
+    }
+
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        let index = self.index;
+        event.map(|window_event, meta| match window_event {
+            WindowEvent::MouseDown(MouseButton::Left) => {
+                cx.emit(UiEvent::AskDelete(index));
+                meta.consume();
+            }
+            // The row below would otherwise take the release as its own.
+            WindowEvent::MouseUp(MouseButton::Left) => meta.consume(),
+            WindowEvent::MouseEnter => {
+                self.hot = true;
+                cx.needs_redraw();
+            }
+            WindowEvent::MouseLeave => {
+                self.hot = false;
+                cx.needs_redraw();
+            }
+            _ => {}
+        });
+    }
+}
+
 impl View for PresetItem {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         let selected = UiState::presets
             .get(cx)
             .get(self.index)
-            .map(|preset| preset.name == UiState::current.get(cx))
+            .map(|preset| {
+                preset.name == UiState::current.get(cx)
+                    && preset.built_in == UiState::current_built_in.get(cx)
+            })
             .unwrap_or(false);
         if selected {
             let b = cx.bounds();
@@ -1071,9 +1243,15 @@ impl Dialogs {
                         .caret_color(Color::rgb(0xd0, 0xd8, 0xde))
                         .selection_color(Color::rgba(0x4a, 0x7c, 0x8c, 0xaa))
                         .on_edit(|cx, text| cx.emit(UiEvent::NameEdited(text)))
-                        .on_submit(|cx, text, _| {
+                        // The flag is true only when the field was submitted
+                        // with the enter key. Losing focus also submits, with
+                        // it false, so ignoring it means clicking Cancel saves
+                        // the preset on the way out.
+                        .on_submit(|cx, text, confirmed| {
                             cx.emit(UiEvent::NameEdited(text));
-                            cx.emit(UiEvent::RequestSave);
+                            if confirmed {
+                                cx.emit(UiEvent::RequestSave);
+                            }
                         })
                         .entity();
                     // Ready to type as soon as the dialog appears.
@@ -1110,6 +1288,26 @@ impl Dialogs {
                     DialogButton::new(cx, "REPLACE", true, |cx| cx.emit(UiEvent::ConfirmSave))
                         .left(Pixels(DIALOG_W - 118.0))
                         .top(Pixels(DIALOG_H - 46.0));
+                });
+            }
+            Dialog::Delete(name) => {
+                let name = name.clone();
+                Shade::new(cx);
+                DialogCard::new(cx, move |cx| {
+                    dialog_title(cx, "DELETE PRESET");
+                    let message = format!("\u{201c}{}\u{201d} will be removed.", name.trim());
+                    dialog_text(cx, &message, 58.0);
+                    dialog_text(cx, "This cannot be undone.", 80.0);
+
+                    DialogButton::new(cx, "CANCEL", false, |cx| cx.emit(UiEvent::CloseDialog))
+                        .left(Pixels(DIALOG_W - 218.0))
+                        .top(Pixels(DIALOG_H - 46.0));
+                    let confirmed = name.clone();
+                    DialogButton::new(cx, "DELETE", true, move |cx| {
+                        cx.emit(UiEvent::DeletePreset(confirmed.clone()))
+                    })
+                    .left(Pixels(DIALOG_W - 118.0))
+                    .top(Pixels(DIALOG_H - 46.0));
                 });
             }
         });

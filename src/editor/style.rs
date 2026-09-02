@@ -70,8 +70,10 @@ pub fn selector_angle(index: usize, count: usize) -> f32 {
     -step * (count - 1) as f32 / 2.0 + step * index as f32
 }
 
-/// The shadow a control casts onto the panel.
-fn contact_shadow(canvas: &mut Canvas, cx: f32, cy: f32, r: f32) {
+/// The shadow a control casts onto the panel. Every control on the panel sits
+/// in the same light, so the drawn ones and the rendered knobs share this
+/// rather than each carrying a shadow of its own.
+pub fn contact_shadow(canvas: &mut Canvas, cx: f32, cy: f32, r: f32) {
     let mut path = vg::Path::new();
     path.ellipse(cx, cy + r * 0.16, r * 1.20, r * 1.14);
     canvas.fill_path(
@@ -339,93 +341,4 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
     );
 
     canvas.restore();
-}
-
-/// A slotted machine screw holding the panel to the rack.
-pub fn draw_screw(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
-    // The countersink it sits in.
-    let mut well = vg::Path::new();
-    well.circle(cx, cy + r * 0.10, r * 1.22);
-    canvas.fill_path(
-        &well,
-        &vg::Paint::radial_gradient(
-            cx,
-            cy + r * 0.10,
-            r * 0.85,
-            r * 1.25,
-            rgba(0x000000, 0.5),
-            rgba(0x000000, 0.0),
-        ),
-    );
-
-    // Domed head.
-    let mut head = vg::Path::new();
-    head.circle(cx, cy, r);
-    canvas.fill_path(
-        &head,
-        &vg::Paint::radial_gradient(
-            cx - r * 0.45,
-            cy - r * 0.50,
-            r * 0.05,
-            r * 1.35,
-            rgb(0xf4f6f8),
-            rgb(0x3c4046),
-        ),
-    );
-    // Turned edge, bright where it faces the light.
-    canvas.stroke_path(
-        &head,
-        &vg::Paint::linear_gradient(
-            cx,
-            cy - r,
-            cx,
-            cy + r,
-            rgba(0xffffff, 0.45),
-            rgba(0x101216, 0.85),
-        )
-        .with_line_width(r * 0.20),
-    );
-    canvas.stroke_path(
-        &head,
-        &vg::Paint::color(rgba(0x000000, 0.55)).with_line_width(r * 0.07),
-    );
-
-    // The slot, cut at whatever angle the screw happened to end up.
-    let (sa, ca) = angle.to_radians().sin_cos();
-    let mut slot = vg::Path::new();
-    slot.move_to(cx - r * 0.78 * sa, cy + r * 0.78 * ca);
-    slot.line_to(cx + r * 0.78 * sa, cy - r * 0.78 * ca);
-    canvas.stroke_path(
-        &slot,
-        &vg::Paint::color(rgba(0x14161a, 0.95)).with_line_width(r * 0.30),
-    );
-    // The lit lower lip of the slot.
-    let mut lip = vg::Path::new();
-    lip.move_to(cx - r * 0.74 * sa + ca * r * 0.13, cy + r * 0.74 * ca + sa * r * 0.13);
-    lip.line_to(cx + r * 0.74 * sa + ca * r * 0.13, cy - r * 0.74 * ca + sa * r * 0.13);
-    canvas.stroke_path(
-        &lip,
-        &vg::Paint::color(rgba(0xffffff, 0.30)).with_line_width(r * 0.07),
-    );
-}
-
-/// The oval rack mounting slot punched through the end of the panel.
-pub fn draw_rack_slot(canvas: &mut Canvas, cx: f32, cy: f32, w: f32, h: f32) {
-    let mut hole = vg::Path::new();
-    hole.rounded_rect(cx - w / 2.0, cy - h / 2.0, w, h, h / 2.0);
-    canvas.fill_path(
-        &hole,
-        &vg::Paint::linear_gradient(
-            cx,
-            cy - h / 2.0,
-            cx,
-            cy + h / 2.0,
-            rgb(0xd8dcde),
-            rgb(0xa4abaf),
-        ),
-    );
-    canvas.stroke_path(
-        &hole,
-        &vg::Paint::color(rgba(0x000000, 0.5)).with_line_width(1.4),
-    );
 }

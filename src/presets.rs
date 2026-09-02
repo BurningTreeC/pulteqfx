@@ -38,7 +38,7 @@ const BUILT_IN: &[(&str, &[(&str, f32)])] = &[(
 )];
 
 /// A preset: parameter id to normalised value.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Preset {
     pub name: String,
     pub values: BTreeMap<String, f32>,
@@ -71,10 +71,12 @@ pub fn preset_dir() -> Option<PathBuf> {
 /// it looks like it does.
 pub fn load_all(params: &impl Params) -> Vec<Preset> {
     let user = load_user();
-    let mut presets: Vec<Preset> = built_in(params)
-        .into_iter()
-        .filter(|preset| !name_taken(&preset.name, &user))
-        .collect();
+    // A saved preset that happens to share a name with a factory one does not
+    // hide it. The factory preset is compiled in and cannot be edited, so
+    // dropping it from the list would put it permanently out of reach; the two
+    // sit side by side instead, told apart by the factory tag and by the fact
+    // that only yours can be deleted.
+    let mut presets: Vec<Preset> = built_in(params);
     presets.extend(user);
     presets
 }
@@ -172,6 +174,49 @@ pub fn save(preset: &Preset) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
+/// Remove a saved preset's file.
+///
+/// The file is located the way `load_user` identifies it rather than by
+/// deriving a name from the preset's own, because a file renamed by hand
+/// still shows in the list under the name stored inside it. Deleting the row
+/// has to remove the file that row actually came from.
+pub fn delete(name: &str) -> std::io::Result<()> {
+    let dir = preset_dir().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no config directory to delete presets from",
+        )
+    })?;
+    let wanted = name.trim().to_lowercase();
+    for entry in std::fs::read_dir(&dir)?.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.extension().is_some_and(|ext| ext == "json") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(preset) = serde_json::from_str::<Preset>(&text) else {
+            continue;
+        };
+        let shown = if preset.name.trim().is_empty() {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default()
+                .to_string()
+        } else {
+            preset.name.clone()
+        };
+        if shown.trim().to_lowercase() == wanted {
+            return std::fs::remove_file(&path);
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "no saved preset by that name",
+    ))
+}
+
 /// Whether the live parameters still match a preset's values. Comparing the
 /// values rather than tracking an edited flag means that turning a control
 /// back to where it was counts as unmodified again.
@@ -189,11 +234,16 @@ pub fn matches(params: &impl Params, values: &BTreeMap<String, f32>) -> bool {
     })
 }
 
-/// Whether saving under this name would replace something.
+/// Whether saving under this name would replace a file of yours.
+///
+/// Factory presets are deliberately not counted: saving under one of their
+/// names writes a new file beside it and replaces nothing, so warning about
+/// it would be describing something that does not happen.
 pub fn name_taken(name: &str, presets: &[Preset]) -> bool {
     let name = name.trim();
     presets
         .iter()
+        .filter(|preset| !preset.built_in)
         .any(|preset| preset.name.trim().eq_ignore_ascii_case(name))
 }
 

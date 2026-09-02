@@ -6,6 +6,7 @@ use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
 use nih_plug_vizia::widgets::{util::ModifiersExt, RawParamEvent};
 
+use super::sprites::{self, Placement, Sprite};
 use super::style::*;
 
 /// Pixels of vertical drag for the full range of a knob.
@@ -24,6 +25,7 @@ pub struct Knob {
     radius: f32,
     dragging: bool,
     last_y: f32,
+    face: Sprite,
 }
 
 impl Knob {
@@ -44,6 +46,7 @@ impl Knob {
             radius,
             dragging: false,
             last_y: 0.0,
+            face: Sprite::new(),
         }
         .build(
             cx,
@@ -74,12 +77,29 @@ impl View for Knob {
         let r = self.radius * cx.scale_factor();
         let (mx, my) = (bounds.x + bounds.w / 2.0, bounds.y + bounds.h / 2.0);
 
-        draw_knob(
+        // Pick the frame rendered at this angle rather than turning one image,
+        // which would carry the lighting round with the knob.
+        let position = self.param.modulated_normalized_value().clamp(0.0, 1.0);
+        let frame = (position * (sprites::KNOB_FRAMES - 1) as f32).round() as usize;
+        // The render is framed to the body's silhouette and stops dead at its
+        // edge, so the knob has to be given the same contact shadow the drawn
+        // controls lay down or it sits on the enamel with nothing under it.
+        // Dividing by the span recovers the body from the frame, and the draw
+        // factor sets it to the size the faceplate was engraved around.
+        let body = r * sprites::KNOB_LARGE_DRAW / 2.0;
+        contact_shadow(canvas, mx, my, body);
+        self.face.draw_frame(
             canvas,
-            mx,
-            my,
-            r,
-            knob_angle(self.param.modulated_normalized_value()),
+            sprites::KNOB_LARGE,
+            Placement::new(
+                mx,
+                my,
+                r * sprites::KNOB_LARGE_DRAW / sprites::KNOB_LARGE_SPAN,
+                0.0,
+                sprites::CENTRE,
+            ),
+            frame,
+            sprites::KNOB_FRAMES,
         );
     }
 

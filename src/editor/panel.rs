@@ -1,21 +1,27 @@
-//! The faceplate: enamel, rack slots, mounting screws and the edges the light
-//! catches.
+//! The faceplate: enamel, mounting screws and the edges the light catches.
 
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 
+use super::sprites::{self, Placement, Sprite};
 use super::style::*;
 
-/// Fractions of the panel width the rack hardware sits at.
-const SLOT_X: [f32; 2] = [0.0245, 0.9755];
-const SCREW_X: [f32; 2] = [0.0825, 0.9175];
-const HARDWARE_Y: [f32; 2] = [0.245, 0.775];
+/// Fractions of the panel the mounting hardware sits at.
+/// The mounting screws sit close in to the panel's corners.
+const SCREW_X: [f32; 2] = [0.0330, 0.9670];
+const HARDWARE_Y: [f32; 2] = [0.135, 0.865];
 
-pub struct Faceplate;
+pub struct Faceplate {
+    /// One cache per screw; an image belongs to the canvas that uploaded it.
+    screws: [Sprite; 4],
+}
 
 impl Faceplate {
     pub fn new(cx: &mut Context) -> Handle<'_, Self> {
-        Self.build(cx, |_| {})
+        Self {
+            screws: [Sprite::new(), Sprite::new(), Sprite::new(), Sprite::new()],
+        }
+        .build(cx, |_| {})
             .position_type(PositionType::SelfDirected)
             .left(Pixels(0.0))
             .top(Pixels(0.0))
@@ -87,22 +93,22 @@ impl View for Faceplate {
         }
 
         // Rack hardware.
-        for &sx in &SLOT_X {
-            for &sy in &HARDWARE_Y {
-                draw_rack_slot(
-                    canvas,
-                    b.x + b.w * sx,
-                    b.y + b.h * sy,
-                    26.0 * scale,
-                    9.0 * scale,
-                );
-            }
-        }
         for (i, &sx) in SCREW_X.iter().enumerate() {
             for (j, &sy) in HARDWARE_Y.iter().enumerate() {
-                // No two screws are ever driven to the same angle.
-                let angle = [28.0, 74.0, 115.0, 8.0][i * 2 + j];
-                draw_screw(canvas, b.x + b.w * sx, b.y + b.h * sy, 7.5 * scale, angle);
+                // No two screws are ever driven to the same angle, and each
+                // photograph already carries its own.
+                let k = i * 2 + j;
+                self.screws[k].draw(
+                    canvas,
+                    sprites::SCREWS[k],
+                    Placement::new(
+                        b.x + b.w * sx,
+                        b.y + b.h * sy,
+                        15.0 * scale,
+                        0.0,
+                        sprites::CENTRE,
+                    ),
+                );
             }
         }
 

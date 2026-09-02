@@ -1,0 +1,11 @@
+[package]
+name = "assetgen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Offline geometry generator and renderer for PultEQFx control sprites"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+image = { version = "0.24", default-features = false, features = ["png"] }
+serde_json = "1.0"
