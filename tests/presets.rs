@@ -25,7 +25,12 @@ fn presets_round_trip_through_the_config_directory() {
     assert_eq!(presets.len(), 1);
     assert_eq!(presets[0].name, "Low End Punch");
     assert!(presets[0].built_in);
-    assert!(presets::name_taken("low end punch", &presets), "matching a name ignores case");
+    // Saving under a factory name replaces nothing: the factory preset is
+    // compiled in and stays where it is, so this asks only about your files.
+    assert!(
+        !presets::name_taken("low end punch", &presets),
+        "a factory name is not taken, since saving over it replaces no file"
+    );
 
     // Saving the current settings and reading them back gives the same values.
     let captured = presets::capture(&params, "  Bright Vocal  ");
@@ -45,23 +50,47 @@ fn presets_round_trip_through_the_config_directory() {
     assert!(!reloaded.built_in);
     assert_eq!(reloaded.values, captured.values);
 
-    // A saved preset replaces a built-in one of the same name rather than
-    // appearing alongside it.
+    assert!(
+        presets::name_taken("bright vocal", &presets),
+        "matching one of your own names ignores case"
+    );
+
+    // A saved preset under a factory name sits beside it rather than hiding
+    // it. A factory preset cannot be edited or deleted, so dropping it from
+    // the list would put it permanently out of reach.
     let shadow = presets::capture(&params, "Low End Punch");
     presets::save(&shadow).expect("save");
     let presets = presets::load_all(&params);
-    assert_eq!(presets.len(), 2, "no duplicate names");
-    let punch = presets
+    assert_eq!(presets.len(), 3, "the factory preset is still listed");
+    let both: Vec<_> = presets
         .iter()
-        .find(|preset| preset.name == "Low End Punch")
-        .expect("still there");
-    assert!(!punch.built_in, "the saved one wins");
+        .filter(|preset| preset.name == "Low End Punch")
+        .collect();
+    assert_eq!(both.len(), 2, "one factory, one saved");
+    assert!(
+        both.iter().any(|preset| preset.built_in) && both.iter().any(|preset| !preset.built_in),
+        "the pair should be one of each"
+    );
 
     // Names that would be awkward as file names still save and reload.
     let odd = presets::capture(&params, "kick / bass \"trick\"");
     presets::save(&odd).expect("save");
     let presets = presets::load_all(&params);
     assert!(presets.iter().any(|preset| preset.name == "kick / bass \"trick\""));
+
+    // Deleting takes the file away and leaves the factory preset behind.
+    presets::delete("Low End Punch").expect("delete");
+    let presets = presets::load_all(&params);
+    let punch: Vec<_> = presets
+        .iter()
+        .filter(|preset| preset.name == "Low End Punch")
+        .collect();
+    assert_eq!(punch.len(), 1, "only the factory one is left");
+    assert!(punch[0].built_in);
+    assert!(
+        presets::delete("Low End Punch").is_err(),
+        "a factory preset has no file to remove"
+    );
 
     let _ = std::fs::remove_dir_all(dir);
 }

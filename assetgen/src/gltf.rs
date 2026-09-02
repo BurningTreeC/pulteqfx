@@ -190,7 +190,9 @@ pub fn load(
                     mat: mat_id,
                 });
             }
-            for t in indices.chunks_exact(3) {
+            // Whole triangles only; a trailing partial one would be a
+            // malformed accessor and is dropped with the remainder.
+            for t in indices.as_chunks::<3>().0 {
                 mesh.tris.push([base + t[0], base + t[1], base + t[2]]);
             }
             if !supplied {
