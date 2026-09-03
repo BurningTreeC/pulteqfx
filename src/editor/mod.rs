@@ -138,8 +138,11 @@ fn faceplate(cx: &mut Context) {
         .left(Pixels(LAMP_X - 14.0))
         .top(Pixels(LAMP_Y - 14.0));
 
-    small_engraved(cx, "OFF", POWER_X - 28.0, 206.0, 9.0);
-    small_engraved(cx, "ON", POWER_X + 26.0, 212.0, 9.0);
+    // Both sit at exactly forty-five degrees from the knob's centre, which is
+    // where the pointer now aims: dx and dy equal, above and either side of
+    // the shaft at (POWER_X, BOTTOM_ROW).
+    small_engraved(cx, "OFF", POWER_X - 28.0, BOTTOM_ROW - 28.0, 9.0);
+    small_engraved(cx, "ON", POWER_X + 28.0, BOTTOM_ROW - 28.0, 9.0);
     Selector::new(cx, Panel::params, |p| &p.power, R_SMALL, 2, false)
         .place(POWER_X, BOTTOM_ROW, R_SMALL);
 

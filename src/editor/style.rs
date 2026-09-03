@@ -62,11 +62,24 @@ pub fn knob_angle(normalized: f32) -> f32 {
 /// Angles the detents of an `n` position selector sit at. The hardware's
 /// switches all sweep a similar arc whatever their position count, so the
 /// spacing closes up as the positions multiply.
+///
+/// A two position switch is the exception. Sharing the multi-position rule
+/// gave it a 32 degree step, so the pointer moved sixteen degrees either side
+/// of vertical while the OFF and ON engraving sits at forty-five -- the knob
+/// was aimed a long way inside its own lettering. A switch with two states is
+/// thrown, not nudged, and the engraving is where the hardware says the
+/// pointer goes.
+const TWO_POSITION_STEP: f32 = 90.0;
+
 pub fn selector_angle(index: usize, count: usize) -> f32 {
     if count < 2 {
         return 0.0;
     }
-    let step = 32.0_f32.min(120.0 / (count - 1) as f32);
+    let step = if count == 2 {
+        TWO_POSITION_STEP
+    } else {
+        32.0_f32.min(120.0 / (count - 1) as f32)
+    };
     -step * (count - 1) as f32 / 2.0 + step * index as f32
 }
 
@@ -341,4 +354,38 @@ pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f
     );
 
     canvas.restore();
+}
+
+#[cfg(test)]
+mod selector_tests {
+    use super::selector_angle;
+
+    /// The OFF and ON engraving is at forty-five degrees either side of the
+    /// shaft, so the pointer has to be too.
+    #[test]
+    fn a_two_position_switch_throws_to_its_engraving() {
+        assert_eq!(selector_angle(0, 2), -45.0);
+        assert_eq!(selector_angle(1, 2), 45.0);
+    }
+
+    /// The multi-position selectors are unchanged: they keep the 32 degree
+    /// step until the positions are numerous enough to close it up.
+    #[test]
+    fn multi_position_selectors_are_unchanged() {
+        assert_eq!(selector_angle(0, 3), -32.0);
+        assert_eq!(selector_angle(2, 3), 32.0);
+        assert_eq!(selector_angle(0, 4), -48.0);
+        assert_eq!(selector_angle(0, 7), -60.0);
+        assert_eq!(selector_angle(6, 7), 60.0);
+    }
+
+    /// Every selector is symmetric about vertical, whatever its count.
+    #[test]
+    fn selectors_are_centred() {
+        for count in 2..=8 {
+            let first = selector_angle(0, count);
+            let last = selector_angle(count - 1, count);
+            assert!((first + last).abs() < 1e-4, "{count} positions is lopsided");
+        }
+    }
 }

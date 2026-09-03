@@ -91,6 +91,10 @@ pub struct UiState {
     /// The values of the preset named above, kept so the panel can tell
     /// whether anything has been turned since it was loaded.
     pub reference: BTreeMap<String, f32>,
+    /// First row shown in the preset list. Only the rows that fit are built,
+    /// so this is how the list is scrolled rather than an offset applied to
+    /// something already laid out.
+    pub scroll: usize,
     /// Contents of the name field in the save dialog.
     pub name: String,
     /// What went wrong with the last save, if anything.
@@ -105,6 +109,8 @@ pub enum UiEvent {
     SetScale(f64),
     TogglePresetMenu,
     LoadPreset(usize),
+    /// Move the preset list by a number of rows, positive being downwards.
+    ScrollPresets(i32),
     /// Ask before throwing away one of the saved presets.
     AskDelete(usize),
     /// Confirmed: throw it away. Built-in ones have no file and are refused.
@@ -149,6 +155,7 @@ impl UiState {
             current,
             current_built_in,
             reference,
+            scroll: 0,
             name: String::new(),
             error: String::new(),
             params,
@@ -219,8 +226,15 @@ impl Model for UiState {
                     self.menu = if self.menu == Menu::Preset {
                         Menu::None
                     } else {
+                        self.scroll = 0;
                         Menu::Preset
                     };
+                }
+                UiEvent::ScrollPresets(delta) => {
+                    let rows = preset_rows(self.presets.len());
+                    let most = rows.saturating_sub(MAX_PRESET_ROWS);
+                    let next = self.scroll as i64 + *delta as i64;
+                    self.scroll = next.clamp(0, most as i64) as usize;
                 }
                 UiEvent::LoadPreset(index) => {
                     self.menu = Menu::None;
@@ -980,8 +994,42 @@ fn panel_modified(cx: &mut DrawContext) -> bool {
     !presets::matches(&params, &reference)
 }
 
+/// How tall the preset list may get before it starts another column, in rows.
+/// Sized to the window with the header and the card's own padding taken off.
+pub const MAX_PRESET_ROWS: usize = ((WINDOW_H - HEADER_H - 16.0) / ROW_H) as usize;
+/// Width of the scroll bar's gutter, when there is one.
+const GUTTER: f32 = 6.0;
+
+/// How many columns fit across the panel.
+fn preset_columns_available() -> usize {
+    (((PANEL_W - PRESET_X - 8.0) / PRESET_W) as usize).max(1)
+}
+
+/// How many columns a given number of presets is laid out in.
+pub fn preset_columns(count: usize) -> usize {
+    count
+        .div_ceil(MAX_PRESET_ROWS)
+        .max(1)
+        .min(preset_columns_available())
+}
+
+/// How deep the grid is: as few rows as the columns allow, so a short list
+/// stays short and a long one gets deeper rather than wider once it has run
+/// out of width.
+pub fn preset_rows(count: usize) -> usize {
+    count.div_ceil(preset_columns(count)).max(1)
+}
+
 /// The list of presets, built fresh each time it opens so a preset saved a
 /// moment ago is in it.
+///
+/// The shipped presets are a handful, but the ones you save are however many
+/// you save, so the list has no ceiling and cannot simply be as tall as it
+/// needs to be. It fills the panel's width in columns first, and once it has
+/// run out of width it scrolls. Scrolling is done by building only the rows
+/// that are on screen rather than by moving something already laid out, so the
+/// rows that are not visible do not exist and cannot be clicked through the
+/// edge of the card.
 struct PresetMenu;
 
 impl PresetMenu {
@@ -991,27 +1039,116 @@ impl PresetMenu {
             .iter()
             .map(|preset| (preset.name.clone(), preset.built_in))
             .collect();
-        let rows = names.len().max(1);
+        let scroll = UiState::scroll.get(cx);
+
+        let count = names.len();
+        let columns = preset_columns(count);
+        let rows = preset_rows(count);
+        let visible = rows.min(MAX_PRESET_ROWS);
+        let scrolls = rows > MAX_PRESET_ROWS;
+        let width = columns as f32 * PRESET_W + if scrolls { GUTTER } else { 0.0 };
 
         Self.build(cx, move |cx| {
             if names.is_empty() {
                 label_box(cx, "no presets", PRESET_W / 2.0, 4.0 + ROW_H / 2.0, 11.0, PRESET_W, 0x7e, 0x8a, 0x96, 255);
             }
-            for (index, (name, built_in)) in names.iter().enumerate() {
-                PresetItem::new(cx, name, *built_in, index);
+
+            for column in 0..columns {
+                for row in 0..visible {
+                    // Column major: a list is read down a column.
+                    if scroll + row >= rows {
+                        continue;
+                    }
+                    let index = column * rows + scroll + row;
+                    let Some((name, built_in)) = names.get(index) else {
+                        continue;
+                    };
+                    PresetItem::new(cx, name, *built_in, index)
+                        .left(Pixels(1.0 + column as f32 * PRESET_W))
+                        .top(Pixels(4.0 + row as f32 * ROW_H));
+                }
+            }
+
+            if scrolls {
+                PresetScrollBar::new(cx, scroll, rows, visible)
+                    .position_type(PositionType::SelfDirected)
+                    .left(Pixels(width - GUTTER - 2.0))
+                    .top(Pixels(4.0))
+                    .width(Pixels(GUTTER))
+                    .height(Pixels(visible as f32 * ROW_H));
             }
         })
         .position_type(PositionType::SelfDirected)
-        .left(Pixels(PRESET_X))
+        // Kept inside the window: with enough columns the natural left edge
+        // would push the last one off the right hand side.
+        .left(Pixels(PRESET_X.min(PANEL_W - width - 8.0).max(8.0)))
         .top(Pixels(HEADER_H - 2.0))
-        .width(Pixels(PRESET_W))
-        .height(Pixels(rows as f32 * ROW_H + 8.0))
+        .width(Pixels(width))
+        .height(Pixels(visible as f32 * ROW_H + 8.0))
     }
 }
 
 impl View for PresetMenu {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         card(canvas, cx.bounds(), cx.scale_factor());
+    }
+
+    /// The wheel is taken here rather than on a transparent sheet behind the
+    /// rows. A sheet would only work over the gaps between them: vizia sends
+    /// an event the row did not consume up to its parent, never sideways to a
+    /// sibling, and the rows sit on top. The menu *is* the parent, so
+    /// everything the rows ignore arrives here.
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|window_event, meta| {
+            if let WindowEvent::MouseScroll(_, y) = window_event {
+                // One notch, one row. A preset list is read, not skimmed.
+                cx.emit(UiEvent::ScrollPresets(if *y > 0.0 { -1 } else { 1 }));
+                meta.consume();
+            }
+        });
+    }
+}
+
+/// The bar down the right of the list, showing how much of it is on screen.
+struct PresetScrollBar {
+    scroll: usize,
+    rows: usize,
+    visible: usize,
+}
+
+impl PresetScrollBar {
+    fn new(cx: &mut Context, scroll: usize, rows: usize, visible: usize) -> Handle<'_, Self> {
+        Self { scroll, rows, visible }.build(cx, |_| {}).hoverable(false)
+    }
+}
+
+impl View for PresetScrollBar {
+    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+        let b = cx.bounds();
+        let scale = cx.scale_factor();
+        let rows = self.rows.max(1) as f32;
+        let visible = self.visible.max(1) as f32;
+
+        let mut track = vg::Path::new();
+        track.rounded_rect(b.x + b.w * 0.25, b.y, b.w * 0.5, b.h, b.w * 0.25);
+        canvas.fill_path(&track, &vg::Paint::color(rgba(0xffffff, 0.06)));
+
+        let thumb_h = (b.h * visible / rows).max(12.0 * scale);
+        let travel = b.h - thumb_h;
+        let progress = if rows > visible {
+            self.scroll as f32 / (rows - visible)
+        } else {
+            0.0
+        };
+        let mut thumb = vg::Path::new();
+        thumb.rounded_rect(
+            b.x + b.w * 0.25,
+            b.y + travel * progress,
+            b.w * 0.5,
+            thumb_h,
+            b.w * 0.25,
+        );
+        canvas.fill_path(&thumb, &vg::Paint::color(rgba(0xffffff, 0.26)));
     }
 }
 
@@ -1470,5 +1607,75 @@ impl View for DialogButton {
                 meta.consume();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::{preset_columns, preset_rows, MAX_PRESET_ROWS};
+
+    /// What the menu would build at a given scroll offset: the preset index in
+    /// each visible cell. Mirrors the loop in `PresetMenu::new`, which is the
+    /// point -- the arithmetic is what is being checked, not the drawing.
+    fn visible(count: usize, scroll: usize) -> Vec<usize> {
+        let columns = preset_columns(count);
+        let rows = preset_rows(count);
+        let showing = rows.min(MAX_PRESET_ROWS);
+        let mut out = Vec::new();
+        for column in 0..columns {
+            for row in 0..showing {
+                if scroll + row >= rows {
+                    continue;
+                }
+                let index = column * rows + scroll + row;
+                if index < count {
+                    out.push(index);
+                }
+            }
+        }
+        out
+    }
+
+    /// Every preset has to be reachable, and none may appear twice on screen
+    /// at once. A column that spilled into the next column's range would do
+    /// both at the same time.
+    #[test]
+    fn every_preset_is_reachable_and_shown_once() {
+        for count in 1..200usize {
+            let rows = preset_rows(count);
+            let most = rows.saturating_sub(MAX_PRESET_ROWS);
+
+            let mut reached = vec![false; count];
+            for scroll in 0..=most {
+                let shown = visible(count, scroll);
+                let mut seen = shown.clone();
+                seen.sort_unstable();
+                seen.dedup();
+                assert_eq!(
+                    seen.len(),
+                    shown.len(),
+                    "{count} presets show a duplicate at offset {scroll}"
+                );
+                for index in shown {
+                    reached[index] = true;
+                }
+            }
+            let missing: Vec<usize> = reached
+                .iter()
+                .enumerate()
+                .filter(|(_, seen)| !**seen)
+                .map(|(i, _)| i)
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "{count} presets: {missing:?} cannot be reached"
+            );
+        }
+    }
+
+    #[test]
+    fn a_short_list_needs_no_scrolling() {
+        assert_eq!(preset_columns(MAX_PRESET_ROWS), 1);
+        assert_eq!(preset_rows(MAX_PRESET_ROWS), MAX_PRESET_ROWS);
     }
 }
