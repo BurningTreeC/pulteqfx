@@ -317,6 +317,10 @@ impl Model for UiState {
                 UiEvent::SetScale(scale) => {
                     self.scale = *scale;
                     self.menu = Menu::None;
+                    // Into the state the host saves and sizes the window
+                    // from, which vizia does not do for us. See the note on
+                    // `remember_scale`.
+                    crate::editor::remember_scale(&self.params.editor_state, *scale);
                     // NIH-plug watches the user scale factor and asks the host
                     // to resize the window to match.
                     cx.set_user_scale_factor(*scale);
