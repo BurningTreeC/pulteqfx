@@ -83,12 +83,51 @@ const POWER_X: f32 = 985.0;
 const LAMP_X: f32 = 934.0;
 const LAMP_Y: f32 = 167.0;
 
+/// Chooses a window size: stores it, then asks the host for it.
+///
+/// The second half is the one that was missing, and the reason is worth
+/// writing down because the first half is what hid it.
+///
+/// Only one thing in the stack actually asks a host to resize a window:
+/// `GuiContext::request_resize`. nih-plug calls it from one place, its
+/// `WindowModel`, when a `GeometryChanged` reaches the root -- and that
+/// handler opens with a guard:
+///
+/// ```text
+/// if logical_size == old_logical_size && scale_factor == old_user_scale_factor {
+///     return;
+/// }
+/// ```
+///
+/// `logical_size` is the size *before* scaling. The panel's size function is a
+/// constant, so that half never moves and the guard rests entirely on the
+/// scale. `old_user_scale_factor` is read from `ViziaState` -- the very field
+/// `remember_scale` writes. So storing the scale first, which is what the
+/// panel did, made both halves equal by the time the event arrived: the
+/// handler returned early, `request_resize` was never called, and the host was
+/// never told. The panel redrew itself at the new scale inside a window that
+/// stayed the old size, on every platform.
+///
+/// Emitting `GuiContextEvent::Resize` does not rescue it either. That handler
+/// sets the window to `inner_logical_size`, the unscaled size, which has not
+/// moved -- so it asks for the size the window already is.
+///
+/// So the request is made directly. `Editor::size` is `scaled_logical_size`,
+/// so the store has to come first or the host is asked for the old window;
+/// the order below is load-bearing. `ViziaEditor::spawn` reads the same stored
+/// figure for both the window description and `Editor::size`, which is what
+/// makes the next opening come up at the chosen size.
+pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) {
+    remember_scale(state, scale);
+    gui.request_resize();
+}
+
 /// Height of a label box, which is centred on its anchor point.
 const LABEL_H: f32 = 18.0;
 
 pub fn create(params: Arc<PultEqFxParams>, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
     let state = editor_state.clone();
-    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, _| {
+    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, gui| {
         assets::register_noto_sans_regular(cx);
         assets::register_noto_sans_bold(cx);
 
@@ -96,7 +135,7 @@ pub fn create(params: Arc<PultEqFxParams>, editor_state: Arc<ViziaState>) -> Opt
             params: params.clone(),
         }
         .build(cx);
-        UiState::new(state.user_scale_factor(), params.clone()).build(cx);
+        UiState::new(state.user_scale_factor(), params.clone(), gui).build(cx);
 
         Header::new(cx);
 

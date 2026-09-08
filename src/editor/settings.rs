@@ -12,7 +12,7 @@
 use nih_plug::prelude::{Param, ParamPtr, Params};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::widgets::{GuiContextEvent, RawParamEvent};
+use nih_plug_vizia::widgets::RawParamEvent;
 use nih_plug_vizia::assets;
 
 use super::style::*;
@@ -100,6 +100,9 @@ pub struct UiState {
     /// What went wrong with the last save, if anything.
     pub error: String,
     pub params: Arc<crate::params::PultEqFxParams>,
+    /// The door back to the host. Choosing a size has to ask it to resize the
+    /// window, and this is the only thing that can. See `editor::apply_scale`.
+    gui: Arc<dyn nih_plug::prelude::GuiContext>,
 }
 
 pub enum UiEvent {
@@ -125,7 +128,11 @@ pub enum UiEvent {
 }
 
 impl UiState {
-    pub fn new(scale: f64, params: Arc<crate::params::PultEqFxParams>) -> Self {
+    pub fn new(
+        scale: f64,
+        params: Arc<crate::params::PultEqFxParams>,
+        gui: Arc<dyn nih_plug::prelude::GuiContext>,
+    ) -> Self {
         let presets = presets::load_all(&params);
         // A reopened session remembers which preset it was set from, so pick
         // its values back up to compare against.
@@ -159,6 +166,7 @@ impl UiState {
             name: String::new(),
             error: String::new(),
             params,
+            gui,
         }
     }
 
@@ -317,14 +325,14 @@ impl Model for UiState {
                 UiEvent::SetScale(scale) => {
                     self.scale = *scale;
                     self.menu = Menu::None;
-                    // Into the state the host saves and sizes the window
-                    // from, which vizia does not do for us. See the note on
-                    // `remember_scale`.
-                    crate::editor::remember_scale(&self.params.editor_state, *scale);
-                    // NIH-plug watches the user scale factor and asks the host
-                    // to resize the window to match.
+                    // What vizia draws at.
                     cx.set_user_scale_factor(*scale);
-                    cx.emit(GuiContextEvent::Resize);
+                    // What the host saves, and then what the host is asked to
+                    // make the window. Both, in that order, and neither is
+                    // optional: see `editor::apply_scale` for why storing it
+                    // without asking leaves the panel drawn at the new size
+                    // inside a window still at the old one.
+                    crate::editor::apply_scale(&self.params.editor_state, &*self.gui, *scale);
                 }
             }
             meta.consume();
