@@ -34,9 +34,18 @@ print(next(c['floating'] for c in json.load(sys.stdin) if c['address'] == addr))
 sleep 0.5
 hyprctl repl 'return hl.dispatch(hl.dsp.window.move({ x = 100, y = 100 }))' >/dev/null
 # The compositor's window opacity lets whatever is behind show through the
-# panel, which is fine to look at and useless in a screenshot.
-hyprctl setprop "address:$addr" alpha 1 lock >/dev/null 2>&1 || true
-hyprctl setprop "address:$addr" alphainactive 1 lock >/dev/null 2>&1 || true
+# panel, which is fine to look at and ruins a screenshot: the shipped
+# doc/panel.png had a terminal legible through the faceplate for a week.
+#
+# It is done with a window rule and not `hyprctl setprop`, because setprop
+# answers "unknown request" to every property name on this Hyprland -- and
+# because the two setprop lines that used to be here ended in `|| true`, which
+# is how nobody noticed. A rule registered now lands after the ones the config
+# registered, and for opacity the last match wins, so this beats Omarchy's
+# `default-opacity` tag. It applies to the window already mapped.
+hyprctl repl 'return hl.window_rule({ match = { title = "^(PultEQFx)$" }, opacity = "1 1 1" })' >/dev/null
+opacity=$(hyprctl getprop "address:$addr" opacity)
+[ "$opacity" = "1" ] || { echo "window is $opacity opaque; the panel would show what is behind it"; exit 1; }
 sleep 1.5
 
 # By address again, not activewindow: moving the window can hand focus back to
