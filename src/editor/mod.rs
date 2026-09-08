@@ -13,7 +13,7 @@
 mod panel;
 mod sprites;
 pub mod settings;
-mod style;
+pub mod style;
 mod widgets;
 
 use nih_plug::prelude::Editor;
@@ -25,7 +25,7 @@ use crate::params::{HighAttenFreq, HighBoostFreq, LowFreq, PultEqFxParams};
 use panel::Faceplate;
 use settings::{Dialogs, Header, SettingsOverlay, UiState};
 use style::*;
-use widgets::{Knob, Lamp, Selector, Toggle};
+use widgets::{Knob, Lamp, Selector};
 
 #[derive(Lens)]
 pub struct Panel {
@@ -133,20 +133,23 @@ fn faceplate(cx: &mut Context) {
     Knob::new(cx, Panel::params, |p| &p.high_atten, R_LARGE).place(HIGH_ATTEN_X, TOP_ROW, R_LARGE);
 
     selector_scale(cx, ATTEN_SEL_X, TOP_ROW, &HighAttenFreq::LABELS);
-    Selector::new(cx, Panel::params, |p| &p.high_atten_freq, R_SELECTOR, 3, true)
+    Selector::new(cx, Panel::params, |p| &p.high_atten_freq, R_SELECTOR, 3, true, false)
         .place(ATTEN_SEL_X, TOP_ROW, R_SELECTOR);
 
     // --- lower row ----------------------------------------------------------
-    small_engraved(cx, "IN", EQ_SWITCH_X, 194.0, 9.0);
-    small_engraved(cx, "OUT", EQ_SWITCH_X, 296.0, 9.0);
-    Toggle::new(cx, Panel::params, |p| &p.eq_in)
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(EQ_SWITCH_X - 17.0))
-        .top(Pixels(BOTTOM_ROW - 29.0));
+    // The equaliser switch. It was a bat handle toggle; it is a rotary switch
+    // wearing the same knurled metal knob as every other switch on the panel,
+    // thrown between IN at the top left and OUT at the top right. Both sit at
+    // exactly forty-five degrees from the shaft, which is where the pointer
+    // aims, so dx and dy are equal.
+    small_engraved(cx, "IN", EQ_SWITCH_X - 28.0, BOTTOM_ROW - 28.0, 9.0);
+    small_engraved(cx, "OUT", EQ_SWITCH_X + 28.0, BOTTOM_ROW - 28.0, 9.0);
+    Selector::new(cx, Panel::params, |p| &p.eq_in, R_SMALL, 2, false, true)
+        .place(EQ_SWITCH_X, BOTTOM_ROW, R_SMALL);
 
     engraved(cx, "CPS", LOW_FREQ_X, 172.0, 10.0);
     selector_scale(cx, LOW_FREQ_X, BOTTOM_ROW, &LowFreq::LABELS);
-    Selector::new(cx, Panel::params, |p| &p.low_freq, R_SELECTOR, 4, true)
+    Selector::new(cx, Panel::params, |p| &p.low_freq, R_SELECTOR, 4, true, false)
         .place(LOW_FREQ_X, BOTTOM_ROW, R_SELECTOR);
     engraved(cx, "LOW FREQUENCY", LOW_FREQ_X, 302.0, 11.0);
 
@@ -158,7 +161,7 @@ fn faceplate(cx: &mut Context) {
 
     engraved(cx, "KCS", HIGH_FREQ_X, 172.0, 10.0);
     selector_scale(cx, HIGH_FREQ_X, BOTTOM_ROW, &HighBoostFreq::LABELS);
-    Selector::new(cx, Panel::params, |p| &p.high_boost_freq, R_SELECTOR, 7, true)
+    Selector::new(cx, Panel::params, |p| &p.high_boost_freq, R_SELECTOR, 7, true, false)
         .place(HIGH_FREQ_X, BOTTOM_ROW, R_SELECTOR);
     engraved(cx, "HIGH FREQUENCY", HIGH_FREQ_X, 302.0, 11.0);
 
@@ -173,7 +176,7 @@ fn faceplate(cx: &mut Context) {
     // the shaft at (POWER_X, BOTTOM_ROW).
     small_engraved(cx, "OFF", POWER_X - 28.0, BOTTOM_ROW - 28.0, 9.0);
     small_engraved(cx, "ON", POWER_X + 28.0, BOTTOM_ROW - 28.0, 9.0);
-    Selector::new(cx, Panel::params, |p| &p.power, R_SMALL, 2, false)
+    Selector::new(cx, Panel::params, |p| &p.power, R_SMALL, 2, false, false)
         .place(POWER_X, BOTTOM_ROW, R_SMALL);
 
     // --- nameplate ----------------------------------------------------------

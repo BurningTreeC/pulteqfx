@@ -16,6 +16,24 @@ use std::cell::Cell;
 /// The renders, embedded so the plugin stays a single file.
 pub const KNOB_LARGE: &[u8] = include_bytes!("../../assets/gen/knob_large.png");
 
+/// The knurled metal switch knob, from `assets/knob_metal.glb`. Every rotary
+/// switch on the panel wears one: the two frequency selectors, the attenuation
+/// selector, the equaliser's IN/OUT and the power switch.
+///
+/// One image rather than a filmstrip, because this knob has no indicator on it
+/// and is the same at every angle. It is never rotated either -- that would
+/// carry its baked light round with it -- so the widget draws the pointer on
+/// top at whatever angle the switch is thrown to.
+pub const KNOB_METAL: &[u8] = include_bytes!("../../assets/gen/knob_metal.png");
+
+/// The pilot lamp, from `assets/led_ring.glb`, rendered twice: the lens with
+/// the lamp behind it burning, and the same lens with it out. Two renders
+/// rather than one dimmed in the widget, because a dark jewel is not a bright
+/// one with less light on it -- its specular stays exactly where it was while
+/// the body of it goes out.
+pub const LAMP_LIT: &[u8] = include_bytes!("../../assets/gen/lamp_lit.png");
+pub const LAMP_DARK: &[u8] = include_bytes!("../../assets/gen/lamp_dark.png");
+
 /// The four mounting screws, each photographed already driven to its own
 /// angle. Nothing is rotated here: a screw sits where it was tightened, and
 /// turning one image would carry its lighting round with it.
@@ -36,6 +54,20 @@ pub const KNOB_LARGE_SPAN: f32 = 0.9852;
 /// hardware that overhangs its nominal circle, so a knob drawn at exactly its
 /// radius sits marooned inside its own dial.
 pub const KNOB_LARGE_DRAW: f32 = 2.50;
+
+/// The same two figures for the metal switch knob, as reported by
+/// `assetgen --nominal`, and how wide to draw it.
+pub const KNOB_METAL_SPAN: f32 = 0.9804;
+
+/// A shade over twice the layout radius: the hardware's switch knobs overhang
+/// the circle their engraving is laid out around, the same way the big knobs
+/// do, just less.
+pub const KNOB_METAL_DRAW: f32 = 2.44;
+
+/// And for the lamp. Its frame carries the mounting flange, which is wider
+/// than the bezel and belongs in the picture.
+pub const LAMP_SPAN: f32 = 0.9434;
+pub const LAMP_DRAW: f32 = 2.30;
 
 /// How many frames the knob's filmstrip holds, spanning the full `SWEEP`. A
 /// turning knob cannot be drawn by rotating one image: that turns its lighting
@@ -63,12 +95,28 @@ pub struct Placement {
     pub degrees: f32,
     /// The shaft's position within the render.
     pub pivot: (f32, f32),
+    /// How much of the panel's light reaches this part, as a multiplier on its
+    /// own colour. One is directly under the lamp. See `style::light_at`.
+    pub lit: f32,
 }
 
 impl Placement {
     pub fn new(x: f32, y: f32, height: f32, degrees: f32, pivot: (f32, f32)) -> Self {
-        Self { x, y, height, degrees, pivot }
+        Self { x, y, height, degrees, pivot, lit: 1.0 }
     }
+
+    pub fn lit(mut self, lit: f32) -> Self {
+        self.lit = lit;
+        self
+    }
+}
+
+/// A multiplier on a render's colour, as a paint tint. White is the render
+/// untouched; grey darkens it without touching its alpha, so the silhouette
+/// and the contact shadow under it are unaffected.
+fn tint(lit: f32) -> vg::Color {
+    let v = lit.clamp(0.0, 1.0);
+    vg::Color::rgbf(v, v, v)
 }
 
 /// A lazily uploaded image. The canvas is only reachable from `draw`, so the
@@ -132,14 +180,14 @@ impl Sprite {
         path.rect(0.0, 0.0, w, h);
         canvas.fill_path(
             &path,
-            &vg::Paint::image(
+            &vg::Paint::image_tint(
                 id,
                 0.0,
                 -(frame as f32) * h,
                 w,
                 h * strip as f32,
                 0.0,
-                1.0,
+                tint(at.lit),
             ),
         );
         canvas.restore();
@@ -163,7 +211,10 @@ impl Sprite {
         canvas.translate(-w * at.pivot.0, -h * at.pivot.1);
         let mut path = vg::Path::new();
         path.rect(0.0, 0.0, w, h);
-        canvas.fill_path(&path, &vg::Paint::image(id, 0.0, 0.0, w, h, 0.0, 1.0));
+        canvas.fill_path(
+            &path,
+            &vg::Paint::image_tint(id, 0.0, 0.0, w, h, 0.0, tint(at.lit)),
+        );
         canvas.restore();
     }
 

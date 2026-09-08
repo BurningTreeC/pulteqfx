@@ -104,7 +104,18 @@ fn main() -> ExitCode {
                 .get("hide")
                 .map(|v| v.split(',').map(|n| n.trim().to_string()).collect())
                 .unwrap_or_default();
-            match gltf::load(&path, get("scale", 10.0), parts::BAKELITE, &overrides, &hide) {
+            // The base colour, metalness and roughness come from the export;
+            // the surface texture and any brushing do not, because glTF has no
+            // equivalent and the export cannot state them. So the fallback is
+            // not only what an untyped primitive gets -- it is where every
+            // primitive's *finish* comes from. A metal export wants
+            // `--fallback aluminium`, which is brushed around the axis and has
+            // a finer grain than the plastic default.
+            let fallback = opts
+                .get("fallback")
+                .and_then(|n| parts::by_name(n))
+                .unwrap_or(parts::BAKELITE);
+            match gltf::load(&path, get("scale", 10.0), fallback, &overrides, &hide) {
                 Ok(mut m) => {
                     // Exports vary in which axis the reference face points down.
                     let tilt = get("rotate-x", 0.0);
@@ -196,4 +207,5 @@ assetgen -- render panel controls from parametric geometry
   --segments N       lathe segments (default 384)
   --ao-samples N     occlusion rays per vertex (default 64)
   --margin F         framing slack around the part (default 1.015)
+  --fallback NAME    finish for a glb's materials (default bakelite)
   --nominal MM       control body radius, for the reported span";

@@ -31,6 +31,22 @@ pub const CHROME: Material = Material::new(v3(0.782, 0.771, 0.742), 0.215, 1.0)
 /// an emissive term rather than just a red albedo.
 pub const JEWEL: Material = Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0)
     .glowing(v3(0.172, 0.0020, 0.0012));
+/// The lens of a pilot lamp with the lamp actually behind it.
+///
+/// `JEWEL`'s emissive term was set for a lens read at a glance beside a much
+/// brighter panel; a pilot lamp fifteen millimetres across, lit, is the
+/// brightest thing on the faceplate and has to be rendered as a source rather
+/// than as a red object catching the key light. Five times the emission, which
+/// is what puts it clear of the enamel around it.
+pub const JEWEL_LAMP: Material = Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0)
+    .glowing(v3(0.86, 0.052, 0.030));
+
+/// The same lens with the lamp behind it out: identical albedo, no emissive
+/// term. A dark jewel is not a bright one with less light on it -- its
+/// specular stays exactly where it was while the body of it goes out, and that
+/// difference is what reads as "the lamp is off" rather than "the room is
+/// dim".
+pub const JEWEL_DARK: Material = Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0);
 pub const IVORY: Material = Material::new(v3(0.80, 0.725, 0.575), 0.44, 0.0).textured(0.06, 5.0);
 
 /// An ellipsoid-swept segment along the X axis: a bar with rounded ends whose
@@ -672,6 +688,8 @@ pub fn by_name(name: &str) -> Option<Material> {
         "brass" => BRASS,
         "chrome" => CHROME,
         "jewel" => JEWEL,
+        "jewel_dark" => JEWEL_DARK,
+        "jewel_lamp" => JEWEL_LAMP,
         _ => return None,
     })
 }

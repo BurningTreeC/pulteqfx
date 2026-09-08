@@ -83,17 +83,63 @@ pub fn selector_angle(index: usize, count: usize) -> f32 {
     -step * (count - 1) as f32 / 2.0 + step * index as f32
 }
 
+/// Where the panel's light is, as a direction across the faceplate.
+///
+/// The renders are lit by `assetgen`'s panel rig, whose key sits up and to the
+/// left of the part, so everything drawn has to agree with that or the panel
+/// reads as two rooms. These are the offsets a shadow takes, in multiples of
+/// the caster's radius: right and down, away from the light.
+pub const SHADOW_X: f32 = 0.11;
+pub const SHADOW_Y: f32 = 0.15;
+
+/// Where the panel's light sits, in panel coordinates. Matches the highlight
+/// `panel.rs` paints on the enamel; the two have to agree or the hardware is
+/// lit from somewhere the faceplate is not.
+const LIGHT_X: f32 = PANEL_W * 0.045;
+const LIGHT_Y: f32 = -PANEL_H * 0.12;
+
+/// How much of the panel's light reaches a point on it, as a multiplier on the
+/// hardware's own colour.
+///
+/// The renders carry the *direction* the light comes from -- their highlights
+/// are all up and to the left, because that is where `assetgen`'s rig puts the
+/// key. What they cannot carry is how far from the lamp the control is bolted,
+/// because a render knows nothing about the panel it ends up on. So a knob in
+/// the far corner was as bright as one under the light, which is the giveaway
+/// that a panel is a collage rather than a photograph.
+///
+/// Linear in distance rather than inverse square: a real faceplate is lit by a
+/// broad source at a distance, not a point at arm's length, and an inverse
+/// square across a nineteen inch panel puts the right hand end in the dark.
+pub fn light_at(x: f32, y: f32) -> f32 {
+    const REACH: f32 = 1165.0; // corner to corner, from the light
+    const FALL: f32 = 0.26;
+    let d = ((x - LIGHT_X).powi(2) + (y - LIGHT_Y).powi(2)).sqrt();
+    1.0 - FALL * (d / REACH).clamp(0.0, 1.0)
+}
+
+/// The same, for a widget that knows only where its centre is on screen.
+/// Panel coordinates are window pixels divided by the scale, less the header
+/// strip the panel sits below.
+pub fn light_at_screen(mx: f32, my: f32, scale: f32) -> f32 {
+    light_at(mx / scale, my / scale - HEADER_H)
+}
+
 /// The shadow a control casts onto the panel. Every control on the panel sits
 /// in the same light, so the drawn ones and the rendered knobs share this
 /// rather than each carrying a shadow of its own.
 pub fn contact_shadow(canvas: &mut Canvas, cx: f32, cy: f32, r: f32) {
+    // Down and to the right, because the light is in the top left corner. It
+    // used to fall straight down, which is a light directly overhead and
+    // disagrees with every render on the panel.
+    let (ox, oy) = (cx + r * SHADOW_X, cy + r * SHADOW_Y);
     let mut path = vg::Path::new();
-    path.ellipse(cx, cy + r * 0.16, r * 1.20, r * 1.14);
+    path.ellipse(ox, oy, r * 1.20, r * 1.14);
     canvas.fill_path(
         &path,
         &vg::Paint::radial_gradient(
-            cx,
-            cy + r * 0.16,
+            ox,
+            oy,
             r * 0.72,
             r * 1.20,
             rgba(0x000000, 0.60),
@@ -102,258 +148,50 @@ pub fn contact_shadow(canvas: &mut Canvas, cx: f32, cy: f32, r: f32) {
     );
 }
 
-/// One of the panel's black bakelite knobs.
+/// The pointer painted on a metal switch knob, and the shadow it throws.
 ///
-/// The hardware's knobs have a broad lobed skirt around a stepped top: a
-/// bright rim, a recessed ring, then a raised boss in the middle. Almost all
-/// of the light lands on the lobes and on that rim, which is what makes them
-/// read as moulded bakelite rather than as a flat disc.
-pub fn draw_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
-    let rot = angle.to_radians();
-    contact_shadow(canvas, cx, cy, r);
+/// The knob itself is a render and has no indicator on it, because a render
+/// cannot be turned without turning its light. So the index goes on top: a
+/// dark groove with a bright fill sitting in it, offset down and right of the
+/// line it marks, which is where a groove's shadow falls under a light in the
+/// top left corner.
+///
+/// `bar` draws the long radial index the frequency selectors carry; without it
+/// the mark is the short stub the equaliser and power switches have.
+pub fn switch_pointer(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32, bar: bool) {
+    let (sa, ca) = angle.to_radians().sin_cos();
+    let (from, to) = if bar { (0.26, 0.94) } else { (0.42, 0.94) };
+    let at = |t: f32| (cx + r * t * sa, cy - r * t * ca);
+    let (x0, y0) = at(from);
+    let (x1, y1) = at(to);
 
-    // Lobed skirt, turning with the knob.
-    const LOBES: usize = 11;
-    const STEPS: usize = LOBES * 12;
-    let mut skirt = vg::Path::new();
-    for i in 0..=STEPS {
-        let t = i as f32 / STEPS as f32 * std::f32::consts::TAU;
-        let lobe = 1.0 - 0.042 * (1.0 - (t * LOBES as f32).cos());
-        let a = t + rot;
-        let (x, y) = (cx + r * lobe * a.sin(), cy - r * lobe * a.cos());
-        if i == 0 {
-            skirt.move_to(x, y);
-        } else {
-            skirt.line_to(x, y);
-        }
-    }
-    skirt.close();
-    canvas.fill_path(
-        &skirt,
-        &vg::Paint::linear_gradient(cx, cy - r, cx, cy + r, rgb(0x2b2c30), rgb(0x050507)),
-    );
-    // The skirt falls away towards its edge.
-    canvas.fill_path(
-        &skirt,
-        &vg::Paint::radial_gradient(cx, cy, r * 0.55, r, rgba(0x000000, 0.0), rgba(0x000000, 0.7)),
-    );
-    // Rim light along the lit edge of the lobes.
+    // The groove's own shadow, thrown down and right.
+    let drop = r * 0.045;
+    let mut shade = vg::Path::new();
+    shade.move_to(x0 + drop, y0 + drop);
+    shade.line_to(x1 + drop, y1 + drop);
     canvas.stroke_path(
-        &skirt,
-        &vg::Paint::linear_gradient(
-            cx - r * 0.5,
-            cy - r,
-            cx + r * 0.4,
-            cy + r * 0.7,
-            rgba(0xd8e2e8, 0.55),
-            rgba(0xd8e2e8, 0.0),
-        )
-        .with_line_width(r * 0.05),
+        &shade,
+        &vg::Paint::color(rgba(0x000000, 0.55))
+            .with_line_width(r * 0.185)
+            .with_line_cap(vg::LineCap::Round),
     );
 
-    // Index line, painted across the skirt as on the hardware.
-    let (sa, ca) = rot.sin_cos();
     let mut index = vg::Path::new();
-    index.move_to(cx + r * 0.76 * sa, cy - r * 0.76 * ca);
-    index.line_to(cx + r * 0.99 * sa, cy - r * 0.99 * ca);
+    index.move_to(x0, y0);
+    index.line_to(x1, y1);
     canvas.stroke_path(
         &index,
-        &vg::Paint::color(rgba(0x000000, 0.8)).with_line_width(r * 0.16),
+        &vg::Paint::color(rgba(0x101112, 0.92))
+            .with_line_width(r * 0.185)
+            .with_line_cap(vg::LineCap::Round),
     );
     canvas.stroke_path(
         &index,
-        &vg::Paint::color(rgb(0xf6f3ec)).with_line_width(r * 0.085),
+        &vg::Paint::color(rgb(0xf6f3ec))
+            .with_line_width(r * 0.095)
+            .with_line_cap(vg::LineCap::Round),
     );
-
-    // Step down from the skirt to the top of the knob.
-    let face = r * 0.74;
-    let mut step = vg::Path::new();
-    step.circle(cx, cy, face);
-    canvas.fill_path(&step, &vg::Paint::color(rgba(0x000000, 0.75)));
-    // The bright turned rim that catches the light all the way round.
-    canvas.stroke_path(
-        &step,
-        &vg::Paint::linear_gradient(
-            cx,
-            cy - face,
-            cx,
-            cy + face,
-            rgba(0xdce6ec, 0.95),
-            rgba(0x6a747c, 0.45),
-        )
-        .with_line_width(r * 0.055),
-    );
-
-    // Recessed ring inside the rim.
-    let recess = r * 0.66;
-    let mut inner = vg::Path::new();
-    inner.circle(cx, cy, recess);
-    canvas.fill_path(
-        &inner,
-        &vg::Paint::radial_gradient(
-            cx - recess * 0.3,
-            cy - recess * 0.35,
-            recess * 0.1,
-            recess * 1.4,
-            rgb(0x333439),
-            rgb(0x08080a),
-        ),
-    );
-    // Light bouncing off the far wall of the recess.
-    let mut bounce = vg::Path::new();
-    bounce.arc(
-        cx,
-        cy,
-        recess * 0.92,
-        std::f32::consts::PI * 0.08,
-        std::f32::consts::PI * 0.78,
-        vg::Solidity::Solid,
-    );
-    canvas.stroke_path(
-        &bounce,
-        &vg::Paint::color(rgba(0xa8b6c0, 0.22)).with_line_width(recess * 0.10),
-    );
-
-    // The raised boss in the middle.
-    let boss = r * 0.44;
-    let mut cap = vg::Path::new();
-    cap.circle(cx, cy, boss);
-    canvas.fill_path(&cap, &vg::Paint::color(rgba(0x000000, 0.6)));
-    canvas.stroke_path(
-        &cap,
-        &vg::Paint::linear_gradient(
-            cx,
-            cy - boss,
-            cx,
-            cy + boss,
-            rgba(0x9ca8b2, 0.45),
-            rgba(0x303438, 0.0),
-        )
-        .with_line_width(r * 0.035),
-    );
-    canvas.fill_path(
-        &cap,
-        &vg::Paint::radial_gradient(
-            cx - boss * 0.35,
-            cy - boss * 0.4,
-            0.0,
-            boss * 1.5,
-            rgb(0x2a2b2f),
-            rgb(0x070709),
-        ),
-    );
-    // A soft sheen on the boss.
-    let mut sheen = vg::Path::new();
-    sheen.ellipse(cx - boss * 0.28, cy - boss * 0.36, boss * 0.44, boss * 0.26);
-    canvas.fill_path(
-        &sheen,
-        &vg::Paint::radial_gradient(
-            cx - boss * 0.28,
-            cy - boss * 0.36,
-            0.0,
-            boss * 0.48,
-            rgba(0xffffff, 0.16),
-            rgba(0xffffff, 0.0),
-        ),
-    );
-}
-
-/// The bar shaped pointer knobs the frequency switches use: a dark moulded
-/// lever with a polished metal cap and a white index stripe, sitting on a
-/// turned collar.
-pub fn draw_pointer_knob(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32) {
-    contact_shadow(canvas, cx, cy, r * 1.05);
-
-    // The collar the lever is fixed to, drawn first so the lever sits on it.
-    let collar = r * 0.66;
-    let mut base = vg::Path::new();
-    base.circle(cx, cy, collar);
-    canvas.fill_path(
-        &base,
-        &vg::Paint::radial_gradient(
-            cx - collar * 0.35,
-            cy - collar * 0.4,
-            collar * 0.1,
-            collar * 1.5,
-            rgb(0x6a6e74),
-            rgb(0x0c0d0f),
-        ),
-    );
-    canvas.stroke_path(
-        &base,
-        &vg::Paint::linear_gradient(
-            cx,
-            cy - collar,
-            cx,
-            cy + collar,
-            rgba(0xd0d8de, 0.5),
-            rgba(0x202428, 0.0),
-        )
-        .with_line_width(r * 0.06),
-    );
-
-    canvas.save();
-    canvas.translate(cx, cy);
-    canvas.rotate(angle.to_radians());
-
-    let len = r * 1.78;
-    let half = r * 0.36;
-    let back = r * 0.46;
-
-    // The moulded body.
-    let mut body = vg::Path::new();
-    body.rounded_rect(-half, -len, half * 2.0, len + back, half * 0.42);
-    canvas.fill_path(&body, &vg::Paint::color(rgba(0x000000, 0.85)));
-    let mut inset = vg::Path::new();
-    inset.rounded_rect(
-        -half * 0.94,
-        -len * 0.985,
-        half * 1.88,
-        len * 0.985 + back,
-        half * 0.40,
-    );
-    canvas.fill_path(
-        &inset,
-        &vg::Paint::linear_gradient(-half, 0.0, half, 0.0, rgb(0x3a3b40), rgb(0x0b0b0d)),
-    );
-
-    // The polished cap over the outer third, with the index stripe on it.
-    let cap_len = len * 0.40;
-    let mut cap = vg::Path::new();
-    cap.rounded_rect(-half * 0.94, -len * 0.985, half * 1.88, cap_len, half * 0.40);
-    canvas.fill_path(
-        &cap,
-        &vg::Paint::linear_gradient(
-            -half,
-            0.0,
-            half,
-            0.0,
-            rgb(0xd4d8dc),
-            rgb(0x5c6066),
-        ),
-    );
-    let mut stripe = vg::Path::new();
-    stripe.move_to(0.0, -len * 0.94);
-    stripe.line_to(0.0, -len * 0.985 + cap_len * 0.94);
-    canvas.stroke_path(
-        &stripe,
-        &vg::Paint::color(rgba(0x1c1e22, 0.85)).with_line_width(half * 0.34),
-    );
-    canvas.stroke_path(
-        &stripe,
-        &vg::Paint::color(rgb(0xf6f7f8)).with_line_width(half * 0.18),
-    );
-
-    // Highlight down the lit edge of the body.
-    let mut lit = vg::Path::new();
-    lit.move_to(-half * 0.72, back * 0.5);
-    lit.line_to(-half * 0.72, -len * 0.55);
-    canvas.stroke_path(
-        &lit,
-        &vg::Paint::color(rgba(0xffffff, 0.16)).with_line_width(half * 0.30),
-    );
-
-    canvas.restore();
 }
 
 #[cfg(test)]
