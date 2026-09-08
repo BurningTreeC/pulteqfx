@@ -15,10 +15,15 @@ use pulteqfx::editor::style::{light_at, BOTTOM_ROW, PANEL_H, PANEL_W, SHADOW_X, 
 /// Shadows fall away from the light, so both offsets are positive: right and
 /// down. A shadow straight below a control is a lamp directly overhead, and
 /// that is not where the renders put it.
+///
+/// Checked at compile time rather than at run time, because both are constants
+/// and a test that can only ever pass or only ever fail is not a test -- it is
+/// an assertion that happens to be written in a test. `-D warnings` in CI says
+/// the same thing, which is how this was found.
 #[test]
 fn shadows_fall_away_from_the_light() {
-    assert!(SHADOW_X > 0.0, "shadows must fall to the right of the light");
-    assert!(SHADOW_Y > 0.0, "shadows must fall below the light");
+    const _: () = assert!(SHADOW_X > 0.0, "shadows must fall right of the light");
+    const _: () = assert!(SHADOW_Y > 0.0, "shadows must fall below the light");
 }
 
 /// The bright end of the panel is the top left and the dark end is the bottom
