@@ -219,9 +219,12 @@ fn faceplate(cx: &mut Context) {
         .place(POWER_X, BOTTOM_ROW, R_SMALL);
 
     // --- nameplate ----------------------------------------------------------
-    plate(cx, "PULTEQFX", 154.0, 129.0, 11.0);
-    plate(cx, "PROGRAM EQUALIZER", 154.0, 150.0, 11.0);
-    plate(cx, "BURNINGTREEC", 154.0, 169.0, 11.0);
+    plate(cx, "PULTEQFX", 154.0, 126.0, 11.0);
+    // The version, under the name. Smaller than the rest of the plate: it is
+    // there to be quoted when reporting a fault, not read every session.
+    plate(cx, concat!("V", env!("CARGO_PKG_VERSION")), 154.0, 142.0, 7.5);
+    plate(cx, "PROGRAM EQUALIZER", 154.0, 158.0, 11.0);
+    plate(cx, "BURNINGTREEC", 154.0, 177.0, 11.0);
 }
 
 /// Extension for dropping a widget onto the panel at a centre point.
