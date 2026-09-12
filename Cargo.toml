@@ -8,6 +8,7 @@ description = "PultEQFx, a circuit modelled passive program equalizer (CLAP/VST3
 
 [workspace]
 members = ["assetgen", "installer", "xtask"]
+exclude = ["vendor/baseview"]
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -38,3 +39,7 @@ opt-level = 3
 inherits = "release"
 debug = true
 strip = "none"
+
+# Preserve the pinned GUI backend, with the Windows capture fix vendored.
+[patch."https://github.com/RustAudio/baseview.git"]
+baseview = { path = "vendor/baseview" }
