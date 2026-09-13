@@ -16,6 +16,7 @@ use winapi::um::winuser::{
     WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
     XBUTTON1, XBUTTON2, WM_CAPTURECHANGED, WM_CANCELMODE, WM_KILLFOCUS,
+    TrackMouseEvent, TRACKMOUSEEVENT, TME_LEAVE, WM_MOUSELEAVE,
     VK_LBUTTON, VK_MBUTTON, VK_RBUTTON, VK_XBUTTON1, VK_XBUTTON2, SM_SWAPBUTTON,
 };
 
@@ -193,11 +194,30 @@ unsafe fn wnd_proc_inner(
             None
         }
         BV_RELEASE_LOST_BUTTONS => Some(0),
+        WM_MOUSELEAVE => {
+            window_state.set_cursor_inside(false);
+            Some(0)
+        }
         WM_MOUSEMOVE => {
             let mut window = crate::Window::new(window_state.create_window());
 
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
+
+            // Vizia stops hit-testing when the root loses its OVER flag.
+            // Native capture keeps sending moves outside the client rectangle,
+            // so track both directions explicitly, including reentry while a
+            // button remains held. WM_MOUSELEAVE covers uncaptured departures.
+            let size = window_state.window_info.borrow().physical_size();
+            let inside = x >= 0 && y >= 0 && (x as u32) < size.width && (y as u32) < size.height;
+            if inside && !window_state.cursor_inside.get() {
+                let mut tracking: TRACKMOUSEEVENT = std::mem::zeroed();
+                tracking.cbSize = std::mem::size_of::<TRACKMOUSEEVENT>() as u32;
+                tracking.dwFlags = TME_LEAVE;
+                tracking.hwndTrack = hwnd;
+                TrackMouseEvent(&mut tracking);
+            }
+            window_state.set_cursor_inside(inside);
 
             let physical_pos = PhyPoint { x, y };
             let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
@@ -486,6 +506,7 @@ pub(super) struct WindowState {
     keyboard_state: RefCell<KeyboardState>,
     pressed_buttons: Cell<Buttons>,
     pending_releases: Cell<Buttons>,
+    cursor_inside: Cell<bool>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     _drop_target: RefCell<Option<Rc<DropTarget>>>,
@@ -504,6 +525,15 @@ pub(super) struct WindowState {
 }
 
 impl WindowState {
+    fn set_cursor_inside(&self, inside: bool) {
+        if self.cursor_inside.replace(inside) == inside {
+            return;
+        }
+        let event = if inside { MouseEvent::CursorEntered } else { MouseEvent::CursorLeft };
+        let mut window = crate::Window::new(self.create_window());
+        self.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, Event::Mouse(event));
+    }
+
     fn queue_button_releases(&self, released: Buttons) {
         if released.is_empty() {
             return;
@@ -591,13 +621,11 @@ impl WindowState {
     pub(self) fn handle_deferred_task(&self, task: WindowTask) {
         match task {
             WindowTask::Resize(size) => {
-                let window_info = {
-                    let mut window_info = self.window_info.borrow_mut();
-                    let scaling = window_info.scale();
-                    *window_info = WindowInfo::from_logical_size(size, scaling);
-
-                    *window_info
-                };
+                // Keep the committed size until WM_SIZE reports the actual
+                // client rectangle. Pre-updating it makes that handler suppress
+                // the notification Vizia needs to resize its canvas and layout.
+                let window_info =
+                    WindowInfo::from_logical_size(size, self.window_info.borrow().scale());
 
                 // If the window is a standalone window then the size needs to include the window
                 // decorations
@@ -761,6 +789,7 @@ impl Window<'_> {
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 pressed_buttons: Cell::new(Buttons::default()),
                 pending_releases: Cell::new(Buttons::default()),
+                cursor_inside: Cell::new(false),
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),

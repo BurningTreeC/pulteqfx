@@ -18,6 +18,15 @@ plugin window:
   thread or touch audio processing.
 - Cancellation delivery uses `try_borrow_mut` and a posted wake-up to avoid
   reentering a borrowed window handler. Pending releases precede later input.
+- Cursor boundary tracking emits `CursorEntered`/`CursorLeft` before movement,
+  including leaving and reentering while native capture is held. `WM_MOUSELEAVE`
+  handles uncaptured departures. Vizia clears the root's `OVER` flag outside the
+  window and requires an enter event to resume hit-testing; repairing mouse-up
+  alone did not restore this state.
+- Deferred resizing leaves the committed `WindowInfo` unchanged until `WM_SIZE`
+  reports the actual client rectangle. Updating it before `SetWindowPos` caused
+  the resize notification to be suppressed, leaving Vizia's canvas/layout at
+  the old size until reopening.
 - `src/win/window_tests.rs` exercises hidden native windows and actual Windows
   message dispatch. `src/lib.rs` also enables the platform-independent button
   tests on Linux. `src/win/mod.rs` declares the new helper.
@@ -43,3 +52,10 @@ Windows behavior follows Microsoft's documented
 and [physical button state](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getasynckeystate).
 Native tests were run through Wine; testing a drag in Windows REAPER remains a
 host integration check, distinct from these message-dispatch regressions.
+
+The additional boundary and resize regressions fail against the previous local
+backend and pass with these fixes. They cover all four client edges during a
+held drag, reentry without capture, and repeated zoom changes at 100% and 150%
+display scaling. The Windows packaging job runs the native backend tests with
+OpenGL enabled before bundling. Wine validation does not replace testing the
+released VST3/CLAP in the affected Windows host.
