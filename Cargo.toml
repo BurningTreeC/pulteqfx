@@ -40,6 +40,6 @@ inherits = "release"
 debug = true
 strip = "none"
 
-# Preserve the pinned GUI backend, with the Windows capture fix vendored.
+# Preserve the pinned GUI backend, with Windows input and resize fixes vendored.
 [patch."https://github.com/RustAudio/baseview.git"]
 baseview = { path = "vendor/baseview" }

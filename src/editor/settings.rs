@@ -323,16 +323,11 @@ impl Model for UiState {
                     self.error.clear();
                 }
                 UiEvent::SetScale(scale) => {
-                    self.scale = *scale;
                     self.menu = Menu::None;
-                    // What vizia draws at.
-                    cx.set_user_scale_factor(*scale);
-                    // What the host saves, and then what the host is asked to
-                    // make the window. Both, in that order, and neither is
-                    // optional: see `editor::apply_scale` for why storing it
-                    // without asking leaves the panel drawn at the new size
-                    // inside a window still at the old one.
-                    crate::editor::apply_scale(&self.params.editor_state, &*self.gui, *scale);
+                    if crate::editor::apply_scale(&self.params.editor_state, &*self.gui, *scale) {
+                        self.scale = *scale;
+                        cx.set_user_scale_factor(*scale);
+                    }
                 }
             }
             meta.consume();

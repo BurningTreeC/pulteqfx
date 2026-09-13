@@ -44,10 +44,12 @@ impl Fixture {
                 pending_releases: Cell::new(Buttons::default()),
                 cursor_inside: Cell::new(false),
                 handler: RefCell::new(Some(Box::new(Recorder(Rc::clone(&events), Rc::clone(&sizes))))),
+                pending_events: RefCell::new(VecDeque::new()),
                 _drop_target: RefCell::new(None),
                 scale_policy: WindowScalePolicy::ScaleFactor(1.0),
                 dw_style: winapi::um::winuser::WS_POPUP,
                 deferred_tasks: RefCell::new(VecDeque::new()),
+                draining_tasks: Cell::new(false),
                 #[cfg(feature = "opengl")]
                 gl_context: None,
             });
@@ -69,6 +71,121 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) { unsafe { DestroyWindow(self.state.hwnd); } }
+}
+
+struct DuringFrame {
+    recorder: Recorder,
+    action: Box<dyn FnMut(&mut crate::Window)>,
+}
+
+impl WindowHandler for DuringFrame {
+    fn on_frame(&mut self, window: &mut crate::Window) { (self.action)(window); }
+    fn on_event(&mut self, window: &mut crate::Window, event: Event) -> EventStatus {
+        self.recorder.on_event(window, event)
+    }
+}
+
+impl Fixture {
+    fn during_frame(&self, action: impl FnMut(&mut crate::Window) + 'static) {
+        *self.state.handler.borrow_mut() = Some(Box::new(DuringFrame {
+            recorder: Recorder(self.events.clone(), self.sizes.clone()),
+            action: Box::new(action),
+        }));
+    }
+}
+
+#[test]
+fn host_resize_during_a_frame_is_delivered_after_the_callback() {
+    let window = Fixture::new();
+    let hwnd = window.state.hwnd;
+    let sizes = window.sizes.clone();
+    window.during_frame(move |_| unsafe {
+        // A host can synchronously resize the child from request_resize().
+        assert_ne!(SetWindowPos(hwnd, null_mut(), 0, 0, 300, 150,
+            SWP_NOZORDER | SWP_NOMOVE), 0);
+        assert!(sizes.borrow().is_empty(), "must not reenter the renderer");
+    });
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+    assert_eq!(window.sizes.borrow().len(), 1);
+    assert_eq!(window.sizes.borrow()[0].physical_size(), PhySize::new(300, 150));
+}
+
+#[test]
+fn nested_message_does_not_run_a_deferred_resize_inside_a_callback() {
+    let window = Fixture::new();
+    let hwnd = window.state.hwnd;
+    let sizes = window.sizes.clone();
+    window.during_frame(move |window| unsafe {
+        window.resize(Size::new(250.0, 125.0));
+        // Native APIs can send even an unrelated message before on_frame ends.
+        SendMessageW(hwnd, WM_USER + 99, 0, 0);
+        assert!(sizes.borrow().is_empty());
+    });
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+    assert_eq!(window.sizes.borrow().len(), 1);
+    assert_eq!(window.sizes.borrow()[0].physical_size(), PhySize::new(250, 125));
+}
+
+#[test]
+fn queued_resizes_finish_in_request_order() {
+    let window = Fixture::new();
+    window.during_frame(|window| {
+        window.resize(Size::new(250.0, 125.0));
+        window.resize(Size::new(300.0, 150.0));
+    });
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+    let sizes: Vec<_> = window.sizes.borrow().iter().map(|info| info.physical_size()).collect();
+    assert_eq!(sizes, [PhySize::new(250, 125), PhySize::new(300, 150)]);
+    assert_eq!(window.state.window_info.borrow().physical_size(), PhySize::new(300, 150));
+}
+
+#[test]
+fn destruction_during_a_callback_keeps_dispatch_state_alive() {
+    let window = Fixture::new();
+    let hwnd = window.state.hwnd;
+    let weak = Rc::downgrade(&window.state);
+    window.during_frame(move |_| unsafe {
+        assert_ne!(DestroyWindow(hwnd), 0);
+        // The fixture owns one reference. The native callback must own another
+        // after WM_NCDESTROY releases the reference formerly held by the HWND.
+        assert!(weak.strong_count() > 1);
+    });
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+    assert_eq!(Rc::strong_count(&window.state), 1, "dispatch reference leaked");
+}
+
+#[test]
+fn nested_mouse_and_timer_messages_preserve_input_and_resume_frames() {
+    let window = Fixture::new();
+    let hwnd = window.state.hwnd;
+    let frames = Rc::new(Cell::new(0));
+    let count = frames.clone();
+    window.during_frame(move |_| {
+        count.set(count.get() + 1);
+        if count.get() == 1 {
+            unsafe {
+                SendMessageW(hwnd, WM_MOUSEMOVE, 0, position(20, 20));
+                SendMessageW(hwnd, WM_LBUTTONDOWN, 1, position(20, 20));
+                SendMessageW(hwnd, WM_MOUSEMOVE, 1, position(240, 30));
+                SendMessageW(hwnd, WM_MOUSELEAVE, 0, 0);
+                SendMessageW(hwnd, WM_LBUTTONUP, 0, position(240, 30));
+                SendMessageW(hwnd, WM_TIMER, WIN_FRAME_TIMER, 0);
+                SendMessageW(hwnd, WM_MOUSEMOVE, 0, position(20, 20));
+            }
+        }
+    });
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+    assert_eq!(frames.get(), 1, "nested timer must not start another frame");
+    assert_eq!(window.releases(), [MouseButton::Left]);
+    let crossings: Vec<_> = window.events.borrow().iter().filter_map(|event| match event {
+        MouseEvent::CursorEntered => Some(true),
+        MouseEvent::CursorLeft => Some(false),
+        _ => None,
+    }).collect();
+    assert_eq!(crossings, [true, false, true]);
+    assert!(unsafe { GetCapture() }.is_null());
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+    assert_eq!(frames.get(), 2, "frame processing must recover");
 }
 
 #[test]
@@ -108,11 +225,11 @@ fn capture_loss_during_a_callback_defers_instead_of_reborrowing_the_handler() {
     let borrowed = first.state.handler.borrow_mut();
     unsafe { SetCapture(second.state.hwnd); }
     assert!(first.releases().is_empty());
-    assert!(!first.state.pending_releases.get().is_empty());
+    assert!(!first.state.pending_events.borrow().is_empty());
     drop(borrowed);
     first.send(BV_RELEASE_LOST_BUTTONS, 0, 0);
     assert_eq!(first.releases(), [MouseButton::Left]);
-    assert!(first.state.pending_releases.get().is_empty());
+    assert!(first.state.pending_events.borrow().is_empty());
 }
 
 #[test]

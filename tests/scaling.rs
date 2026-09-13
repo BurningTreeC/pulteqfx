@@ -77,11 +77,19 @@ mod resize {
     use super::*;
     use nih_plug::prelude::{GuiContext, ParamPtr, PluginApi, PluginState};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
-    #[derive(Default)]
     struct CountingHost {
         resizes: AtomicUsize,
+        state: Arc<nih_plug_vizia::ViziaState>,
+        observed: Mutex<Vec<f64>>,
+        accepts: bool,
+    }
+
+    impl CountingHost {
+        fn new(state: Arc<nih_plug_vizia::ViziaState>, accepts: bool) -> Self {
+            Self { state, accepts, resizes: AtomicUsize::new(0), observed: Mutex::new(Vec::new()) }
+        }
     }
 
     impl GuiContext for CountingHost {
@@ -90,7 +98,8 @@ mod resize {
         }
         fn request_resize(&self) -> bool {
             self.resizes.fetch_add(1, Ordering::Relaxed);
-            true
+            self.observed.lock().unwrap().push(self.state.user_scale_factor());
+            self.accepts
         }
         unsafe fn raw_begin_set_parameter(&self, _: ParamPtr) {}
         unsafe fn raw_set_parameter_normalized(&self, _: ParamPtr, _: f32) {}
@@ -106,9 +115,10 @@ mod resize {
     #[test]
     fn choosing_a_size_asks_the_host_to_resize_the_window() {
         let state = default_state();
-        let host = Arc::new(CountingHost::default());
+        let host = CountingHost::new(state.clone(), true);
 
-        pulteqfx::editor::apply_scale(&state, &*host, 1.5);
+        assert!(pulteqfx::editor::apply_scale(&state, &host, 1.5));
+        assert_eq!(*host.observed.lock().unwrap(), [1.5]);
 
         assert_eq!(
             host.resizes.load(Ordering::Relaxed),
@@ -121,6 +131,33 @@ mod resize {
             1.5,
             "the host was asked to resize before the size it would read was set"
         );
+    }
+
+    #[test]
+    fn rejected_resize_restores_the_size_saved_with_the_session() {
+        let params = fresh();
+        remember_scale(&params.editor_state, 1.25);
+        let previous_size = params.editor_state.scaled_logical_size();
+        let host = CountingHost::new(params.editor_state.clone(), false);
+
+        assert!(!pulteqfx::editor::apply_scale(&params.editor_state, &host, 2.0));
+        assert_eq!(*host.observed.lock().unwrap(), [2.0]);
+        assert_eq!(params.editor_state.scaled_logical_size(), previous_size);
+        let restored = fresh();
+        restored.deserialize_fields(&params.serialize_fields());
+        assert_eq!(restored.editor_state.user_scale_factor(), 1.25);
+    }
+
+    #[test]
+    fn repeated_zoom_changes_report_each_new_size_without_redundant_requests() {
+        let state = default_state();
+        let host = CountingHost::new(state.clone(), true);
+        for scale in [0.5, 2.0, 0.75, 1.5, 1.0] {
+            assert!(pulteqfx::editor::apply_scale(&state, &host, scale));
+            assert!(pulteqfx::editor::apply_scale(&state, &host, scale));
+            assert_eq!(state.user_scale_factor(), scale);
+        }
+        assert_eq!(*host.observed.lock().unwrap(), [0.5, 2.0, 0.75, 1.5, 1.0]);
     }
 }
 

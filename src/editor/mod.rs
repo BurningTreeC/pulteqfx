@@ -37,28 +37,10 @@ impl Model for Panel {}
 pub fn default_state() -> Arc<ViziaState> {
     ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 1.0)
 }
-/// Writes the chosen size into the state the host saves and reads the window
-/// size from.
-///
-/// `cx.set_user_scale_factor` changes what vizia *draws* at, and that is all
-/// it changes. Two other things depend on the figure and both read it out of
-/// `ViziaState` instead: `Editor::size`, which is what the host is told to
-/// make the window, and the serialised editor state, which is what comes back
-/// next session.
-///
-/// nih-plug copies the figure across on a `GeometryChanged`, and that does not
-/// fire here: `Resize` asks for `inner_logical_size`, the size *before*
-/// scaling, which has not moved -- so vizia sees the window size it already
-/// had and says nothing. The scale was therefore never stored, which is why
-/// the setting did not survive a session, and why the host kept sizing the
-/// window for the old scale while the panel drew itself at the new one. That
-/// mismatch is the "broken scaling": where the host honours the size it was
-/// given, the panel is drawn larger than the window holding it.
-///
-/// So it is written here, directly. `PersistentField::set` is the only door
-/// into that field and it takes a whole `ViziaState`, so one is made to carry
-/// the number in and dropped on the way out. Its size function is never asked
-/// anything -- `set` copies the scale and nothing else.
+/// Updates the scale used by `Editor::size()` and saved in the host session.
+/// Vizia's drawing scale is separate and must only change after the host has
+/// accepted the resize. `PersistentField::set` copies the carrier's scale;
+/// the original state's size function and open status stay intact.
 pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
     use nih_plug::params::persist::PersistentField;
     let carrier = ViziaState::new_with_default_scale_factor(|| (0, 0), scale);
@@ -83,43 +65,21 @@ const POWER_X: f32 = 985.0;
 const LAMP_X: f32 = 934.0;
 const LAMP_Y: f32 = 167.0;
 
-/// Chooses a window size: stores it, then asks the host for it.
-///
-/// The second half is the one that was missing, and the reason is worth
-/// writing down because the first half is what hid it.
-///
-/// Only one thing in the stack actually asks a host to resize a window:
-/// `GuiContext::request_resize`. nih-plug calls it from one place, its
-/// `WindowModel`, when a `GeometryChanged` reaches the root -- and that
-/// handler opens with a guard:
-///
-/// ```text
-/// if logical_size == old_logical_size && scale_factor == old_user_scale_factor {
-///     return;
-/// }
-/// ```
-///
-/// `logical_size` is the size *before* scaling. The panel's size function is a
-/// constant, so that half never moves and the guard rests entirely on the
-/// scale. `old_user_scale_factor` is read from `ViziaState` -- the very field
-/// `remember_scale` writes. So storing the scale first, which is what the
-/// panel did, made both halves equal by the time the event arrived: the
-/// handler returned early, `request_resize` was never called, and the host was
-/// never told. The panel redrew itself at the new scale inside a window that
-/// stayed the old size, on every platform.
-///
-/// Emitting `GuiContextEvent::Resize` does not rescue it either. That handler
-/// sets the window to `inner_logical_size`, the unscaled size, which has not
-/// moved -- so it asks for the size the window already is.
-///
-/// So the request is made directly. `Editor::size` is `scaled_logical_size`,
-/// so the store has to come first or the host is asked for the old window;
-/// the order below is load-bearing. `ViziaEditor::spawn` reads the same stored
-/// figure for both the window description and `Editor::size`, which is what
-/// makes the next opening come up at the chosen size.
-pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) {
+/// Stores the requested scale before the host reads `Editor::size()`.
+/// Returns whether the UI should adopt it. A refusal restores the persisted
+/// size, so drawing and host geometry continue to agree.
+pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) -> bool {
+    let previous = state.user_scale_factor();
+    if scale == previous {
+        return true;
+    }
     remember_scale(state, scale);
-    gui.request_resize();
+    if gui.request_resize() {
+        true
+    } else {
+        remember_scale(state, previous);
+        false
+    }
 }
 
 /// Height of a label box, which is centred on its anchor point.
