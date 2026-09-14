@@ -14,3 +14,11 @@
 .DS_Store
 .idea/
 .vscode/
+
+# macOS AU packaging output; keep its documentation tracked.
+/dist/
+*.component
+*.appex
+*.app
+**/__pycache__/
+!/docs/MACOS_AUDIO_UNITS.md

@@ -242,3 +242,9 @@ python3 tools/third-party-notices.py
 | `tests/presets.rs` | preset storage round trip |
 | `tests/state.rs` | what survives a save and reload |
 | `tools/third-party-notices.py` | regenerates the dependency licence file |
+
+On macOS, `cargo xtask bundle-au --all --release` also builds self-contained
+AUv2 components and AUv3 containing apps for this workspace, using ad-hoc
+signing without an Apple Developer account. See
+[macOS Audio Units](docs/MACOS_AUDIO_UNITS.md) for build, installation,
+validation and the current macOS testing status.

@@ -1,0 +1,13 @@
+{
+  "deployment_target": "11.0",
+  "manufacturer": "BTrC",
+  "vendor": "BurningTreeC",
+  "plugins": [
+    {
+      "package": "pulteqfx",
+      "name": "PultEQFx",
+      "clap_id": "com.burningtreec.pulteqfx",
+      "subtype": "PqFx"
+    }
+  ]
+}
