@@ -355,3 +355,29 @@ An Apple account, Developer ID and notarization are not future requirements.
 AUv3 without an Apple account: infrastructure implemented with ad-hoc
 signing, but no real macOS build/registration result is available from this
 Linux session. The absence of an Apple account is intentional.
+
+## macOS CI build fixes (2026-09-14)
+
+Investigated [the failed run](https://github.com/BurningTreeC/pulteqfx/actions/runs/34828458981)
+and applied the following fixes to this repository's packaging:
+
+- Resolve the selected Debug/Release directory before passing it to upstream's
+  PRE_BUILD command, and set configuration-specific output properties to avoid
+  a second configuration suffix. PultEQFx's failed script tried to `cd` into a
+  literal `products/$<CONFIG>` directory.
+- Give Xcode the generated AUv2 helper plist as `INFOPLIST_FILE`, and keep the
+  module a CFBundle instead of marking it as an application. Comp76Fx's failed
+  artifacts contained APPL plists without AudioComponents for revisions A/D,
+  while revision F retained its correct generated plist: the default plist
+  processor raced the upstream PRE_BUILD copy. The verifier remains strict.
+- Apply the source-hash-checked AUv3 host switch-scope patch described in
+  `packaging/macos/patches/README.md`. GainStageFx failed at the unscoped
+  microphone-permission case in Xcode 16.4. No Apple credentials are involved.
+
+Validation: 11 packaging tests passed in this repository, including real
+CMake multi-configuration output-path and AUv2 plist-input contract checks.
+The exact ARC switch error was reproduced with Linux Clang and resolved by
+the patch. Applying the patch to the pinned upstream source, applying it
+again, and rejecting modified source were checked. These checks do not
+replace a complete Xcode build: no revised macOS CI run has been triggered
+from this Linux session. Plugin `src/` and `tests/` were not changed.

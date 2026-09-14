@@ -2,7 +2,14 @@ function(add_nih_clap_audio_unit plugin)
     foreach(key package name clap_path bundle_id version subtype manufacturer vendor)
         string(JSON ${key} GET "${plugin}" ${key})
     endforeach()
-    set(output "${CMAKE_BINARY_DIR}/products/$<CONFIG>")
+    if(NOT DEFINED AU_BUILD_CONFIG)
+        message(FATAL_ERROR "AU_BUILD_CONFIG is required")
+    endif()
+    if(NOT AU_BUILD_CONFIG MATCHES "^(Debug|Release)$")
+        message(FATAL_ERROR "AU_BUILD_CONFIG must be Debug or Release, got '${AU_BUILD_CONFIG}'")
+    endif()
+    set(output "${CMAKE_BINARY_DIR}/products/${AU_BUILD_CONFIG}")
+    string(TOUPPER "${AU_BUILD_CONFIG}" output_config)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/products/Release" "${CMAKE_BINARY_DIR}/products/Debug")
     set(target "${package}_${AU_FORMAT}")
     if(AU_FORMAT STREQUAL "auv2")
@@ -17,6 +24,15 @@ function(add_nih_clap_audio_unit plugin)
             XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${bundle_id}.auv2"
             MACOSX_BUNDLE_GUI_IDENTIFIER "${bundle_id}.auv2")
         set(helper "${target}-build-helper")
+        # Both Xcode's plist processing and upstream's PRE_BUILD copy must read
+        # the same generated AU metadata. Otherwise the default application
+        # plist can win the race and erase AudioComponents (CI produced APPL).
+        set_target_properties(${target} PROPERTIES
+            MACOSX_BUNDLE FALSE
+            XCODE_PRODUCT_TYPE "com.apple.product-type.bundle"
+            XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO"
+            XCODE_ATTRIBUTE_INFOPLIST_FILE
+                "${CMAKE_CURRENT_BINARY_DIR}/${helper}-output/auv2_Info.plist")
     else()
         # An executable with the Xcode app-extension product type, not a MODULE.
         add_executable(${target})
@@ -36,12 +52,19 @@ function(add_nih_clap_audio_unit plugin)
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../Host-Info.plist.in"
             MACOSX_BUNDLE_BUNDLE_VERSION "${version}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${version}"
-            RUNTIME_OUTPUT_DIRECTORY "${output}")
+            RUNTIME_OUTPUT_DIRECTORY "${output}"
+            RUNTIME_OUTPUT_DIRECTORY_${output_config} "${output}")
     endif()
-    # Upstream's embedded-CLAP PRE_BUILD command uses LIBRARY_OUTPUT_DIRECTORY
-    # as its working directory, including for the executable AUv3 target.
+    # clap-wrapper's embedded-CLAP PRE_BUILD command reads the generic
+    # LIBRARY_OUTPUT_DIRECTORY property as its working directory. Keep that
+    # property concrete (no nested $<CONFIG> expression), while also setting
+    # the config-specific properties so Xcode does not append Release/Debug a
+    # second time.
     set_target_properties(${target} PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${output}" RUNTIME_OUTPUT_DIRECTORY "${output}")
+        LIBRARY_OUTPUT_DIRECTORY "${output}"
+        RUNTIME_OUTPUT_DIRECTORY "${output}"
+        LIBRARY_OUTPUT_DIRECTORY_${output_config} "${output}"
+        RUNTIME_OUTPUT_DIRECTORY_${output_config} "${output}")
     # Xcode does not honor LINK_DEPENDS. Change a helper-only translation unit
     # when CLAP bytes/metadata change so the helper relinks and its descriptor
     # generation POST_BUILD runs again. This never enters the shipped plugin.

@@ -257,7 +257,7 @@ def build(args):
     for kind in manifest["formats"]:
         build_dir = work / kind / (args.arch + "-" + config.lower())
         run(["cmake", "-S", HERE, "-B", build_dir, "-G", "Xcode",
-             f"-DAU_MANIFEST={manifest_file}", f"-DAU_FORMAT={kind}",
+             f"-DAU_MANIFEST={manifest_file}", f"-DAU_FORMAT={kind}", f"-DAU_BUILD_CONFIG={config}",
              "-DCMAKE_OSX_ARCHITECTURES=" + ";".join(manifest["architectures"])],
             env=env, log=logs / (kind + "-configure.log"))
         run(["cmake", "--build", build_dir, "--config", config, "--", "CODE_SIGN_IDENTITY=-",
