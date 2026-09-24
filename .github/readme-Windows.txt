@@ -25,6 +25,11 @@ Or, without administrator rights, into
 
 Create the folder first if it does not exist.
 
+Where your saved presets go
+---------------------------
+%APPDATA%\PultEQFx\Presets, one .json file per preset. The folder is created
+the first time a preset is saved, so it will not be there before then.
+
 If your DAW does not list CLAP plugins, see
 https://github.com/free-audio/clap#hosts
 

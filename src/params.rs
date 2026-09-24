@@ -186,10 +186,17 @@ fn switch_on(text: &str) -> bool {
 
 /// The hardware knobs are dialled 0 to 10.
 fn knob(name: &'static str) -> FloatParam {
-    FloatParam::new(name, 0.0, FloatRange::Linear { min: 0.0, max: 10.0 })
-        .with_smoother(SmoothingStyle::Linear(30.0))
-        .with_value_to_string(Arc::new(|v| format!("{v:.1}")))
-        .with_string_to_value(Arc::new(|s| s.trim().parse().ok()))
+    FloatParam::new(
+        name,
+        0.0,
+        FloatRange::Linear {
+            min: 0.0,
+            max: 10.0,
+        },
+    )
+    .with_smoother(SmoothingStyle::Linear(30.0))
+    .with_value_to_string(Arc::new(|v| format!("{v:.1}")))
+    .with_string_to_value(Arc::new(|s| s.trim().parse().ok()))
 }
 
 impl Default for PultEqFxParams {
@@ -205,7 +212,10 @@ impl Default for PultEqFxParams {
             bandwidth: FloatParam::new(
                 "Bandwidth",
                 5.0,
-                FloatRange::Linear { min: 0.0, max: 10.0 },
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 10.0,
+                },
             )
             .with_smoother(SmoothingStyle::Linear(30.0))
             .with_value_to_string(Arc::new(|v| {
@@ -271,7 +281,14 @@ impl PultEqFxParams {
 
     /// Snapshot of the panel as the circuit wants it: pot fractions and
     /// frequencies in Hz.
-    pub fn controls(&self, low_boost: f32, low_atten: f32, high_boost: f32, high_atten: f32, bandwidth: f32) -> Controls {
+    pub fn controls(
+        &self,
+        low_boost: f32,
+        low_atten: f32,
+        high_boost: f32,
+        high_atten: f32,
+        bandwidth: f32,
+    ) -> Controls {
         Controls {
             low_boost: (low_boost / 10.0) as f64,
             low_atten: (low_atten / 10.0) as f64,

@@ -2822,8 +2822,9 @@ dependencies = [
 
 [[package]]
 name = "pulteqfx"
-version = "0.6.0"
+version = "0.11.0"
 dependencies = [
+ "baseview",
  "nih_plug",
  "nih_plug_vizia",
  "serde",

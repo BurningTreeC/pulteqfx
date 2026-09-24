@@ -8,8 +8,10 @@ use super::style::*;
 
 /// Fractions of the panel the mounting hardware sits at.
 /// The mounting screws sit close in to the panel's corners.
-const SCREW_X: [f32; 2] = [0.0330, 0.9670];
-const HARDWARE_Y: [f32; 2] = [0.135, 0.865];
+pub(super) const SCREW_X: [f32; 2] = [0.0330, 0.9670];
+pub(super) const HARDWARE_Y: [f32; 2] = [0.135, 0.865];
+/// How large a screw head is drawn, in panel pixels.
+pub(super) const SCREW_SIZE: f32 = 15.0;
 
 pub struct Faceplate {
     /// One cache per screw; an image belongs to the canvas that uploaded it.
@@ -22,11 +24,11 @@ impl Faceplate {
             screws: [Sprite::new(), Sprite::new(), Sprite::new(), Sprite::new()],
         }
         .build(cx, |_| {})
-            .position_type(PositionType::SelfDirected)
-            .left(Pixels(0.0))
-            .top(Pixels(0.0))
-            .width(Percentage(100.0))
-            .height(Percentage(100.0))
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(0.0))
+        .top(Pixels(0.0))
+        .width(Percentage(100.0))
+        .height(Percentage(100.0))
     }
 }
 
@@ -127,7 +129,14 @@ impl View for Faceplate {
         ] {
             canvas.fill_path(
                 &panel,
-                &vg::Paint::linear_gradient(sx, sy, ex, ey, rgba(0x000000, alpha), rgba(0x000000, 0.0)),
+                &vg::Paint::linear_gradient(
+                    sx,
+                    sy,
+                    ex,
+                    ey,
+                    rgba(0x000000, alpha),
+                    rgba(0x000000, 0.0),
+                ),
             );
         }
         // And the corner diagonally opposite the light, pooled: darkest where
@@ -156,7 +165,7 @@ impl View for Faceplate {
                     Placement::new(
                         b.x + b.w * sx,
                         b.y + b.h * sy,
-                        15.0 * scale,
+                        SCREW_SIZE * scale,
                         0.0,
                         sprites::CENTRE,
                     )

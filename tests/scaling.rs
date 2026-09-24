@@ -5,10 +5,10 @@
 //! in the menu -- both worked -- but in the figure never reaching the state
 //! that gets written down.
 
-use pulteqfx::editor::{default_state, remember_scale};
-use pulteqfx::editor::settings::SCALES;
-use pulteqfx::params::PultEqFxParams;
 use nih_plug::params::Params;
+use pulteqfx::editor::settings::SCALES;
+use pulteqfx::editor::{default_state, remember_scale};
+use pulteqfx::params::PultEqFxParams;
 
 fn fresh() -> PultEqFxParams {
     PultEqFxParams::default()
@@ -21,7 +21,11 @@ fn fresh() -> PultEqFxParams {
 #[test]
 fn choosing_a_size_reaches_the_state_the_host_reads() {
     let state = default_state();
-    assert_eq!(state.user_scale_factor(), 1.0, "a fresh panel opens at 100 %");
+    assert_eq!(
+        state.user_scale_factor(),
+        1.0,
+        "a fresh panel opens at 100 %"
+    );
     remember_scale(&state, 1.5);
     assert_eq!(
         state.user_scale_factor(),
@@ -31,7 +35,10 @@ fn choosing_a_size_reaches_the_state_the_host_reads() {
     let (w, h) = state.inner_logical_size();
     let (sw, sh) = state.scaled_logical_size();
     println!("{w}x{h} logical, {sw}x{sh} at 150 %");
-    assert!(sw > w && sh > h, "the window the host is told to make did not grow");
+    assert!(
+        sw > w && sh > h,
+        "the window the host is told to make did not grow"
+    );
 }
 
 /// And it has to come back, at every size the menu offers.
@@ -44,7 +51,10 @@ fn the_size_survives_a_session() {
 
         let restored = fresh();
         restored.deserialize_fields(&fields);
-        println!("{scale:.2} saved, {:.2} restored", restored.editor_state.user_scale_factor());
+        println!(
+            "{scale:.2} saved, {:.2} restored",
+            restored.editor_state.user_scale_factor()
+        );
         assert_eq!(
             restored.editor_state.user_scale_factor(),
             scale,
@@ -88,7 +98,12 @@ mod resize {
 
     impl CountingHost {
         fn new(state: Arc<nih_plug_vizia::ViziaState>, accepts: bool) -> Self {
-            Self { state, accepts, resizes: AtomicUsize::new(0), observed: Mutex::new(Vec::new()) }
+            Self {
+                state,
+                accepts,
+                resizes: AtomicUsize::new(0),
+                observed: Mutex::new(Vec::new()),
+            }
         }
     }
 
@@ -98,7 +113,10 @@ mod resize {
         }
         fn request_resize(&self) -> bool {
             self.resizes.fetch_add(1, Ordering::Relaxed);
-            self.observed.lock().unwrap().push(self.state.user_scale_factor());
+            self.observed
+                .lock()
+                .unwrap()
+                .push(self.state.user_scale_factor());
             self.accepts
         }
         unsafe fn raw_begin_set_parameter(&self, _: ParamPtr) {}
@@ -140,7 +158,11 @@ mod resize {
         let previous_size = params.editor_state.scaled_logical_size();
         let host = CountingHost::new(params.editor_state.clone(), false);
 
-        assert!(!pulteqfx::editor::apply_scale(&params.editor_state, &host, 2.0));
+        assert!(!pulteqfx::editor::apply_scale(
+            &params.editor_state,
+            &host,
+            2.0
+        ));
         assert_eq!(*host.observed.lock().unwrap(), [2.0]);
         assert_eq!(params.editor_state.scaled_logical_size(), previous_size);
         let restored = fresh();

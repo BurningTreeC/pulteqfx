@@ -15,7 +15,11 @@ const U16: u64 = 5123;
 const U32: u64 = 5125;
 const F32: u64 = 5126;
 
-fn accessor_slice<'a>(json: &Value, bin: &'a [u8], index: usize) -> Option<(&'a [u8], u64, usize, usize)> {
+fn accessor_slice<'a>(
+    json: &Value,
+    bin: &'a [u8],
+    index: usize,
+) -> Option<(&'a [u8], u64, usize, usize)> {
     let acc = json["accessors"].get(index)?;
     let count = acc["count"].as_u64()? as usize;
     let component = acc["componentType"].as_u64()?;
@@ -117,7 +121,12 @@ fn material_from(
         .unwrap_or(fallback.base);
     let metallic = pbr["metallicFactor"].as_f64().unwrap_or(0.0) as f32;
     let rough = pbr["roughnessFactor"].as_f64().unwrap_or(0.5) as f32;
-    Material { base, roughness: rough, metallic, ..fallback }
+    Material {
+        base,
+        roughness: rough,
+        metallic,
+        ..fallback
+    }
 }
 
 /// Load every primitive of a GLB into one mesh, scaled by `scale` and with the
@@ -185,7 +194,11 @@ pub fn load(
             for (i, p) in positions.into_iter().enumerate() {
                 mesh.verts.push(Vertex {
                     pos: p * scale,
-                    normal: if supplied { normals[i] } else { v3(0.0, 0.0, 1.0) },
+                    normal: if supplied {
+                        normals[i]
+                    } else {
+                        v3(0.0, 0.0, 1.0)
+                    },
                     ao: 1.0,
                     mat: mat_id,
                 });

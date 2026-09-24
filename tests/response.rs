@@ -23,7 +23,11 @@ fn impulse_response(controls: Controls) -> Vec<f64> {
 
 /// Magnitude of the transform of `ir` at `freq`, in dB.
 fn magnitude_db(ir: &[f64], freq: f64) -> f64 {
-    let w = std::f64::consts::TAU * freq / FS;
+    magnitude_db_at(ir, freq, FS)
+}
+
+fn magnitude_db_at(ir: &[f64], freq: f64, sample_rate: f64) -> f64 {
+    let w = std::f64::consts::TAU * freq / sample_rate;
     let (mut re, mut im) = (0.0, 0.0);
     for (n, &x) in ir.iter().enumerate() {
         let phase = w * n as f64;
@@ -228,7 +232,10 @@ fn the_low_end_trick_gives_a_bump_and_a_dip() {
         "expected a dip around 200 Hz, got {:+.2} dB",
         at(&db, 200.0)
     );
-    assert!(at(&db, 1000.0).abs() < 1.0, "the trick must be over by 1 kHz");
+    assert!(
+        at(&db, 1000.0).abs() < 1.0,
+        "the trick must be over by 1 kHz"
+    );
 
     // The same shape moves up with the frequency selector.
     let db = curve(
@@ -247,7 +254,10 @@ fn the_low_end_trick_gives_a_bump_and_a_dip() {
         .filter(|(f, _)| (300.0..=1500.0).contains(*f))
         .map(|(_, d)| *d)
         .fold(f64::MAX, f64::min);
-    assert!(dip < -3.0, "expected a dip above the bump, got {dip:+.2} dB");
+    assert!(
+        dip < -3.0,
+        "expected a dip above the bump, got {dip:+.2} dB"
+    );
 }
 
 #[test]
@@ -273,11 +283,11 @@ fn boosting_and_attenuating_the_highs_together_shapes_the_top() {
 fn the_full_chain_is_transparent_with_the_eq_out() {
     // Whole plugin path: oversampling, the amplifier, the lot.
     let mut channel = Channel::new(FS, 4);
-    channel.tube.set_drive(0.0);
+    channel.set_drive(0.0);
     let mut ir = Vec::with_capacity(IR_LEN);
-    ir.push(channel.process(1e-3, false) as f64 * 1e3);
+    ir.push(channel.process(1e-3, false, true) as f64 * 1e3);
     for _ in 1..IR_LEN {
-        ir.push(channel.process(0.0, false) as f64 * 1e3);
+        ir.push(channel.process(0.0, false, true) as f64 * 1e3);
     }
     header();
     let db: Vec<f64> = SWEEP.iter().map(|&f| magnitude_db(&ir, f)).collect();
@@ -287,6 +297,46 @@ fn the_full_chain_is_transparent_with_the_eq_out() {
             d.abs() < 0.6,
             "amplifier path should be near flat at {f} Hz, got {d:+.2} dB"
         );
+    }
+}
+
+/// The amplifier sounds the same whatever the oversampling setting, and the
+/// same as the analog circuit: a 3 Hz coupling roll off and the output
+/// transformer's 60 kHz one.
+///
+/// It did not. At the host rate the 60 kHz corner is above Nyquist, and the
+/// one pole filter standing in for it was squeezed below instead, which took
+/// half a decibel off 10 kHz and a whole one off 20 kHz with the oversampling
+/// off -- so choosing a setting changed the top end.
+#[test]
+fn the_oversampling_setting_does_not_change_the_tone() {
+    let analog = |f: f64| {
+        let coupling = (f / 3.0) / (1.0 + (f / 3.0).powi(2)).sqrt();
+        let transformer = 1.0 / (1.0 + (f / 60e3).powi(2)).sqrt();
+        20.0 * (coupling * transformer).log10()
+    };
+    const FREQS: [f64; 8] = [20.0, 100.0, 1e3, 5e3, 10e3, 14e3, 16e3, 20e3];
+    for fs in [44_100.0, 48_000.0, 96_000.0] {
+        for factor in [1, 2, 4, 8] {
+            let mut channel = Channel::new(fs, factor);
+            channel.set_drive(0.0);
+            let len = 1 << 16;
+            let ir: Vec<f64> = (0..len)
+                .map(|n| channel.process(if n == 0 { 1e-3 } else { 0.0 }, false, true) as f64 * 1e3)
+                .collect();
+            let errors: Vec<f64> = FREQS
+                .iter()
+                .map(|&f| magnitude_db_at(&ir, f, fs) - analog(f))
+                .collect();
+            let shown: Vec<String> = errors.iter().map(|e| format!("{e:+.3}")).collect();
+            println!("{fs:>6} Hz {factor}x  dB off analog {}", shown.join(" "));
+            for (f, error) in FREQS.iter().zip(&errors) {
+                assert!(
+                    error.abs() < 0.1,
+                    "at {fs} Hz and {factor}x oversampling, {f} Hz is {error:+.3} dB off the analog amplifier"
+                );
+            }
+        }
     }
 }
 

@@ -164,13 +164,22 @@ impl Oversampler {
         oversampler
     }
 
-    pub fn set_factor(&mut self, factor: usize) {
-        let active = match factor {
+    /// The factor asking for `factor` actually gives.
+    pub fn supported(factor: usize) -> usize {
+        1 << Self::stages(factor)
+    }
+
+    fn stages(factor: usize) -> usize {
+        match factor {
             0..=1 => 0,
             2..=3 => 1,
             4..=7 => 2,
             _ => 3,
-        };
+        }
+    }
+
+    pub fn set_factor(&mut self, factor: usize) {
+        let active = Self::stages(factor);
         if active != self.active {
             self.active = active;
             self.reset();

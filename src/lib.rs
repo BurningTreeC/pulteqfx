@@ -29,10 +29,12 @@ use std::sync::Arc;
 
 pub mod dsp;
 pub mod editor;
+pub mod meters;
 pub mod params;
 pub mod presets;
 
 use dsp::Channel;
+use meters::{Meters, Taps};
 use params::{Oversampling, PultEqFxParams};
 
 /// Controls are refreshed at this granularity. Recomputing the port
@@ -45,6 +47,9 @@ pub struct PultEqFx {
     channels: Vec<Channel>,
     sample_rate: f32,
     oversampling: Oversampling,
+    /// The input and output levels, shared with the editor's meters.
+    meters: Arc<Meters>,
+    taps: Taps,
 }
 
 impl Default for PultEqFx {
@@ -54,6 +59,8 @@ impl Default for PultEqFx {
             channels: Vec::new(),
             sample_rate: 44100.0,
             oversampling: Oversampling::X4,
+            meters: Arc::new(Meters::default()),
+            taps: Taps::new(44100.0),
         }
     }
 }
@@ -61,7 +68,7 @@ impl Default for PultEqFx {
 impl Plugin for PultEqFx {
     const NAME: &'static str = "PultEQFx";
     const VENDOR: &'static str = "BurningTreeC";
-    const URL: &'static str = "https://github.com/";
+    const URL: &'static str = "https://github.com/BurningTreeC/pulteqfx";
     const EMAIL: &'static str = "huber.simon@protonmail.com";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -88,7 +95,11 @@ impl Plugin for PultEqFx {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(self.params.clone(), self.params.editor_state.clone())
+        editor::create(
+            self.params.clone(),
+            self.params.editor_state.clone(),
+            self.meters.clone(),
+        )
     }
 
     fn initialize(
@@ -114,12 +125,19 @@ impl Plugin for PultEqFx {
             ));
         }
 
+        self.taps = Taps::new(self.sample_rate);
+        self.meters.set_channels(num_channels);
+        self.meters.clear();
+
         context.set_latency_samples(dsp::LATENCY);
         true
     }
 
     fn reset(&mut self) {
         self.channels.iter_mut().for_each(Channel::reset);
+        // The held readouts are left alone: they are cleared by the person
+        // reading them, and some hosts reset every time playback starts.
+        self.taps.reset();
     }
 
     fn process(
@@ -130,7 +148,8 @@ impl Plugin for PultEqFx {
     ) -> ProcessStatus {
         // The reported latency does not depend on the oversampling factor, so
         // this can change freely while the plugin is running without having to
-        // tell the host anything.
+        // tell the host anything, and the channels fade the new setting in
+        // rather than dropping out while it fills.
         let oversampling = self.params.oversampling.value();
         if oversampling != self.oversampling {
             self.oversampling = oversampling;
@@ -139,18 +158,11 @@ impl Plugin for PultEqFx {
             }
         }
 
+        // With the power off the unit is out of circuit entirely, amplifier
+        // included. The channels still run, so that the dry signal keeps the
+        // reported latency; see `Channel::process`.
         let powered = self.params.power.value();
         let eq_in = self.params.eq_in.value();
-
-        // With the power off the unit is out of circuit entirely, amplifier
-        // included, so the dry signal passes straight through.
-        if !powered {
-            for channel in self.channels.iter_mut() {
-                channel.reset();
-            }
-            return ProcessStatus::Normal;
-        }
-
 
         for (_, mut block) in buffer.iter_blocks(CONTROL_BLOCK) {
             let steps = block.samples() as u32;
@@ -164,22 +176,32 @@ impl Plugin for PultEqFx {
             );
             let drive = (self.params.drive.smoothed.next_step(steps) / 100.0) as f64;
             let output = util::db_to_gain(self.params.output.smoothed.next_step(steps));
+            // The output trim belongs to the amplifier, so it leaves circuit
+            // with the rest of the unit.
+            let gain = if powered { output } else { 1.0 };
 
             for channel in self.channels.iter_mut() {
-                channel.eq.set_controls(controls);
-                channel.tube.set_drive(drive);
+                channel.set_controls(controls);
+                channel.set_drive(drive);
             }
 
             for (channel_idx, samples) in block.iter_mut().enumerate() {
-                let Some(channel) = self.channels.get_mut(channel_idx) else {
+                let (Some(channel), Some((input, output))) = (
+                    self.channels.get_mut(channel_idx),
+                    self.taps.channel(channel_idx),
+                ) else {
                     continue;
                 };
                 for sample in samples.iter_mut() {
-                    *sample = channel.process(*sample, eq_in) * output;
+                    input.add(*sample);
+                    *sample = channel.process(*sample, eq_in, powered) * gain;
+                    output.add(*sample);
                 }
             }
         }
 
+        self.taps
+            .publish(&self.meters, self.channels.len(), buffer.samples());
         ProcessStatus::Normal
     }
 }

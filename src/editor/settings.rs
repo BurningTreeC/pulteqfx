@@ -2,35 +2,60 @@
 //!
 //! None of this is on the hardware, so it is deliberately kept out of the way:
 //! a thin dark header with a single button, and a panel behind it holding the
-//! window scale, the oversampling quality and the amplifier's drive and output
-//! trim.
+//! window scale and the oversampling quality. The amplifier's drive and output
+//! trim used to be in it too; they are on the panel now, beside the output
+//! meter they set.
 
 // Views are constructed with `new` returning a `Handle`, which is how vizia
 // widgets are written throughout, including NIH-plug's own.
 #![allow(clippy::new_ret_no_self)]
 
-use nih_plug::prelude::{Param, ParamPtr, Params};
+use nih_plug::prelude::{Param, Params};
+use nih_plug_vizia::assets;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::RawParamEvent;
-use nih_plug_vizia::assets;
 
 use super::style::*;
-use super::widgets::Knob;
-use super::{label_box, Panel, Place};
+use super::widgets::Detent;
+use super::{label_box, Panel};
 use crate::presets::{self, Preset};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// The window scales offered in the settings panel.
 pub const SCALES: [f64; 9] = [0.5, 0.75, 0.85, 1.0, 1.2, 1.4, 1.5, 1.75, 2.0];
+
+/// The only styling the panel takes from a sheet rather than from its own
+/// drawing: the caret and selection of the preset name box.
+///
+/// The editor runs with no vizia theme at all, so that nothing arrives looking
+/// like a default toolkit, and an unset colour in vizia reads back as
+/// transparent black. The caret used to be given its colour directly on the
+/// text box instead. That made it visible, but it never blinked: vizia blinks
+/// the caret by switching a `caret` class on and off, and only a rule can act
+/// on a class, while a colour set on the view itself outranks every rule.
+///
+/// vizia's theme would also turn the pointer into a text beam over the box.
+/// That cannot be had here: vizia's plugin window backend ignores pointer
+/// changes, and the `baseview` under it has none on Windows or macOS.
+pub const STYLESHEET: &str = r#"
+textbox {
+    caret-color: transparent;
+    selection-color: #4a7c8caa;
+}
+textbox:checked.caret {
+    caret-color: #d0d8de;
+}
+"#;
 /// Oversampling options, in the order the parameter declares them.
 const OVERSAMPLING: [&str; 4] = ["Off", "2x", "4x", "8x"];
 
 const PANEL_X: f32 = PANEL_W - 344.0;
 const PANEL_Y: f32 = HEADER_H + 6.0;
 const PANEL_WIDTH: f32 = 332.0;
-const PANEL_HEIGHT: f32 = 196.0;
+const PANEL_HEIGHT: f32 = 110.0;
 const ROW_H: f32 = 24.0;
 
 /// Which drop down list, if any, is showing.
@@ -55,10 +80,14 @@ pub enum Dialog {
     Name,
     /// Asking whether to replace a preset that already exists.
     Overwrite,
-    /// Asking whether to delete one of your own presets. Carries the name
-    /// rather than the row: an index re-resolved when the dialog is answered
-    /// is how you end up deleting something other than what was asked for.
-    Delete(String),
+    /// Asking whether to delete one of your own presets. Carries the file
+    /// rather than the row or the name: an index re-resolved when the dialog
+    /// is answered, or a name another preset also answers to, is how you end
+    /// up deleting something other than what was asked for.
+    Delete {
+        name: String,
+        path: PathBuf,
+    },
 }
 
 impl Data for Dialog {
@@ -84,10 +113,11 @@ pub struct UiState {
     pub presets: Vec<Preset>,
     /// Name on the preset button.
     pub current: String,
-    /// Whether what is loaded is the factory preset of that name. A saved
-    /// preset may share a name with a factory one, so the name alone does not
-    /// say which row in the list is the one showing.
-    pub current_built_in: bool,
+    /// The file what is loaded came from, or `None` for a factory preset. A
+    /// saved preset may share a name with a factory one, or differ from
+    /// another saved one only in case, so the name alone does not say which
+    /// row in the list is the one showing.
+    pub current_path: Option<PathBuf>,
     /// The values of the preset named above, kept so the panel can tell
     /// whether anything has been turned since it was loaded.
     pub reference: BTreeMap<String, f32>,
@@ -116,8 +146,8 @@ pub enum UiEvent {
     ScrollPresets(i32),
     /// Ask before throwing away one of the saved presets.
     AskDelete(usize),
-    /// Confirmed: throw it away. Built-in ones have no file and are refused.
-    DeletePreset(String),
+    /// Confirmed: throw away the preset read from this file.
+    DeletePreset(PathBuf),
     OpenSaveDialog,
     NameEdited(String),
     /// Save under the name in the field, asking first if it is taken.
@@ -143,7 +173,7 @@ impl UiState {
             .iter()
             .find(|preset| preset.name == saved && !preset.built_in)
             .or_else(|| presets.iter().find(|preset| preset.name == saved));
-        let current_built_in = restored.is_some_and(|preset| preset.built_in);
+        let current_path = restored.and_then(|preset| preset.path.clone());
         let reference = restored
             .map(|preset| preset.values.clone())
             .unwrap_or_default();
@@ -160,7 +190,7 @@ impl UiState {
             dialog: Dialog::None,
             presets,
             current,
-            current_built_in,
+            current_path,
             reference,
             scroll: 0,
             name: String::new(),
@@ -191,14 +221,14 @@ impl UiState {
         }
         let preset = presets::capture(&self.params, &name);
         match presets::save(&preset) {
-            Ok(_) => {
+            Ok(path) => {
                 self.presets = presets::load_all(&self.params);
                 self.reference = preset.values.clone();
                 self.params.set_preset_name(&name);
                 self.current = name;
                 // What is showing is now the file just written, not the
                 // factory preset that may share its name.
-                self.current_built_in = false;
+                self.current_path = Some(path);
                 self.dialog = Dialog::None;
                 self.error.clear();
             }
@@ -248,7 +278,7 @@ impl Model for UiState {
                     self.menu = Menu::None;
                     if let Some(preset) = self.presets.get(*index).cloned() {
                         self.current = preset.name.clone();
-                        self.current_built_in = preset.built_in;
+                        self.current_path = preset.path.clone();
                         self.reference = preset.values.clone();
                         self.params.set_preset_name(&preset.name);
                         self.apply(cx, &preset);
@@ -258,30 +288,35 @@ impl Model for UiState {
                     // Deleting removes a file and there is no undo, so it goes
                     // through the same confirmation as replacing one.
                     if let Some(preset) = self.presets.get(*index) {
-                        if !preset.built_in {
-                            self.dialog = Dialog::Delete(preset.name.clone());
+                        if let (false, Some(path)) = (preset.built_in, &preset.path) {
+                            self.dialog = Dialog::Delete {
+                                name: preset.name.clone(),
+                                path: path.clone(),
+                            };
                             self.menu = Menu::None;
                         }
                     }
                 }
-                UiEvent::DeletePreset(name) => {
+                UiEvent::DeletePreset(path) => {
                     self.dialog = Dialog::None;
-                    let name = name.clone();
-                    // Looked up by name, and refused for anything compiled in:
-                    // a factory preset has no file, and the list would only
-                    // put it straight back.
-                    let ours = self
+                    // Looked up by file. A factory preset has none, so it can
+                    // never be the one asked for.
+                    let doomed = self
                         .presets
                         .iter()
-                        .any(|preset| !preset.built_in && preset.name == name);
-                    if ours {
-                        match presets::delete(&name) {
+                        .find(|preset| preset.path.as_ref() == Some(path))
+                        .cloned();
+                    if let Some(preset) = doomed {
+                        match presets::delete(&preset) {
                             Ok(()) => {
                                 self.presets = presets::load_all(&*self.params);
                                 // Nothing is loaded any more if what was
-                                // loaded has just been thrown away.
-                                if self.current == name {
+                                // loaded has just been thrown away. A factory
+                                // preset of the same name that is loaded
+                                // stays loaded.
+                                if self.current_path.as_ref() == Some(path) {
                                     self.current = String::from(NO_PRESET);
+                                    self.current_path = None;
                                     self.reference.clear();
                                     self.params.set_preset_name("");
                                 }
@@ -330,6 +365,15 @@ impl Model for UiState {
                     }
                 }
             }
+            // The name box is the only thing in the panel that types, and it
+            // exists exactly while the save dialog does. On Windows this is
+            // what gets it the keyboard: a host's message loop sees every key
+            // before the plugin, and some keep the letters for their own
+            // shortcuts -- which is how a box that took Delete and the arrows
+            // could not be typed into. See `vendor/baseview/src/win/text_input.rs`.
+            // Every other platform ignores it. Repeating an unchanged state
+            // does nothing, so it is simply kept in step here.
+            baseview::set_text_input(self.dialog == Dialog::Name);
             meta.consume();
         });
     }
@@ -408,14 +452,7 @@ impl View for Header {
         bar.rect(b.x, b.y, b.w, b.h);
         canvas.fill_path(
             &bar,
-            &vg::Paint::linear_gradient(
-                b.x,
-                b.y,
-                b.x,
-                b.y + b.h,
-                rgb(0x1d2125),
-                rgb(0x0d0f12),
-            ),
+            &vg::Paint::linear_gradient(b.x, b.y, b.x, b.y + b.h, rgb(0x1d2125), rgb(0x0d0f12)),
         );
         let mut edge = vg::Path::new();
         edge.move_to(b.x, b.y + b.h - 0.5);
@@ -501,12 +538,6 @@ impl SettingsOverlay {
 
                 setting_label(cx, "OVERSAMPLING", 84.0);
                 oversampling_row(cx, 152.0, 76.0);
-
-                setting_label(cx, "AMPLIFIER", 124.0);
-                Knob::new(cx, Panel::params, |p| &p.drive, 18.0).place(184.0, 152.0, 18.0);
-                caption(cx, "DRIVE", 184.0, 180.0);
-                Knob::new(cx, Panel::params, |p| &p.output, 18.0).place(262.0, 152.0, 18.0);
-                caption(cx, "OUTPUT", 262.0, 180.0);
             });
             ScaleMenu::new(cx);
         });
@@ -536,7 +567,8 @@ struct Dismiss {
 
 impl Dismiss {
     fn new(cx: &mut Context, shaded: bool) -> Handle<'_, Self> {
-        Self { shaded }.build(cx, |_| {})
+        Self { shaded }
+            .build(cx, |_| {})
             .position_type(PositionType::SelfDirected)
             .left(Pixels(0.0))
             .top(Pixels(0.0))
@@ -631,10 +663,6 @@ fn setting_label(cx: &mut Context, text: &str, y: f32) {
         .color(Color::rgb(0xd2, 0xd8, 0xde));
 }
 
-fn caption(cx: &mut Context, text: &str, x: f32, y: f32) {
-    label_box(cx, text, x, y, 9.0, 70.0, 0x9e, 0xaa, 0xb4, 255);
-}
-
 /// Formats a scale factor the way it is shown on the button.
 pub fn scale_text(scale: f64) -> String {
     format!("{}%", (scale * 100.0).round() as i32)
@@ -672,7 +700,12 @@ impl View for ScaleButton {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         let b = cx.bounds();
         field(canvas, b, cx.scale_factor());
-        caret(canvas, b.x + b.w - 16.0 * cx.scale_factor(), b.y + b.h / 2.0, cx.scale_factor());
+        caret(
+            canvas,
+            b.x + b.w - 16.0 * cx.scale_factor(),
+            b.y + b.h / 2.0,
+            cx.scale_factor(),
+        );
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
@@ -799,7 +832,7 @@ fn oversampling_row(cx: &mut Context, width: f32, y: f32) {
         .height(Pixels(ROW_H));
     let seg = width / OVERSAMPLING.len() as f32;
     for (i, text) in OVERSAMPLING.iter().enumerate() {
-        SegmentHit::new(cx, ptr, i)
+        Detent::new(cx, ptr, i as f32 / (OVERSAMPLING.len() - 1) as f32)
             .position_type(PositionType::SelfDirected)
             .left(Pixels(PANEL_WIDTH - 14.0 - width + i as f32 * seg))
             .top(Pixels(y + 8.0 - ROW_H / 2.0))
@@ -870,34 +903,6 @@ impl View for Segments {
     }
 }
 
-/// A transparent hit area that selects one segment.
-struct SegmentHit {
-    ptr: ParamPtr,
-    index: usize,
-}
-
-impl SegmentHit {
-    fn new(cx: &mut Context, ptr: ParamPtr, index: usize) -> Handle<'_, Self> {
-        Self { ptr, index }.build(cx, |_| {})
-    }
-}
-
-impl View for SegmentHit {
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
-        let (ptr, index) = (self.ptr, self.index);
-        event.map(|window_event, meta| {
-            if let WindowEvent::MouseDown(MouseButton::Left) = window_event {
-                let normalized = index as f32 / (OVERSAMPLING.len() - 1) as f32;
-                cx.emit(RawParamEvent::BeginSetParameter(ptr));
-                cx.emit(RawParamEvent::SetParameterNormalized(ptr, normalized));
-                cx.emit(RawParamEvent::EndSetParameter(ptr));
-                cx.needs_redraw();
-                meta.consume();
-            }
-        });
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Shared chrome
 // ---------------------------------------------------------------------------
@@ -923,7 +928,6 @@ fn caret(canvas: &mut Canvas, x: f32, y: f32, scale: f32) {
         &vg::Paint::color(rgb(0x9eacb8)).with_line_width(1.6 * scale),
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // Presets
@@ -1057,7 +1061,18 @@ impl PresetMenu {
 
         Self.build(cx, move |cx| {
             if names.is_empty() {
-                label_box(cx, "no presets", PRESET_W / 2.0, 4.0 + ROW_H / 2.0, 11.0, PRESET_W, 0x7e, 0x8a, 0x96, 255);
+                label_box(
+                    cx,
+                    "no presets",
+                    PRESET_W / 2.0,
+                    4.0 + ROW_H / 2.0,
+                    11.0,
+                    PRESET_W,
+                    0x7e,
+                    0x8a,
+                    0x96,
+                    255,
+                );
             }
 
             for column in 0..columns {
@@ -1125,7 +1140,13 @@ struct PresetScrollBar {
 
 impl PresetScrollBar {
     fn new(cx: &mut Context, scroll: usize, rows: usize, visible: usize) -> Handle<'_, Self> {
-        Self { scroll, rows, visible }.build(cx, |_| {}).hoverable(false)
+        Self {
+            scroll,
+            rows,
+            visible,
+        }
+        .build(cx, |_| {})
+        .hoverable(false)
     }
 }
 
@@ -1180,7 +1201,18 @@ impl PresetItem {
                     .font_size(11.5)
                     .color(Color::rgb(0xe4, 0xea, 0xf0));
                 if built_in {
-                    label_box(cx, "factory", PRESET_W - 44.0, ROW_H / 2.0, 9.0, 60.0, 0x76, 0x86, 0x92, 255);
+                    label_box(
+                        cx,
+                        "factory",
+                        PRESET_W - 44.0,
+                        ROW_H / 2.0,
+                        9.0,
+                        60.0,
+                        0x76,
+                        0x86,
+                        0x92,
+                        255,
+                    );
                 } else {
                     DeleteButton::new(cx, index);
                 }
@@ -1281,7 +1313,7 @@ impl View for PresetItem {
             .get(self.index)
             .map(|preset| {
                 preset.name == UiState::current.get(cx)
-                    && preset.built_in == UiState::current_built_in.get(cx)
+                    && preset.path == UiState::current_path.get(cx)
             })
             .unwrap_or(false);
         if selected {
@@ -1345,7 +1377,6 @@ impl View for SaveButton {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Dialogs
 // ---------------------------------------------------------------------------
@@ -1384,8 +1415,8 @@ impl Dialogs {
                         .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
                         .font_size(12.0)
                         .color(Color::rgb(0xf0, 0xf3, 0xf6))
-                        .caret_color(Color::rgb(0xd0, 0xd8, 0xde))
-                        .selection_color(Color::rgba(0x4a, 0x7c, 0x8c, 0xaa))
+                        // The caret and selection colours are in `STYLESHEET`,
+                        // not set here; see there for why.
                         .on_edit(|cx, text| cx.emit(UiEvent::NameEdited(text)))
                         // The flag is true only when the field was submitted
                         // with the enter key. Losing focus also submits, with
@@ -1404,7 +1435,18 @@ impl Dialogs {
                     Binding::new(cx, UiState::error, |cx, error| {
                         let error = error.get(cx);
                         if !error.is_empty() {
-                            label_box(cx, &error, DIALOG_W / 2.0, 112.0, 10.0, DIALOG_W - 40.0, 0xe0, 0x86, 0x78, 255);
+                            label_box(
+                                cx,
+                                &error,
+                                DIALOG_W / 2.0,
+                                112.0,
+                                10.0,
+                                DIALOG_W - 40.0,
+                                0xe0,
+                                0x86,
+                                0x78,
+                                255,
+                            );
                         }
                     });
 
@@ -1421,7 +1463,8 @@ impl Dialogs {
                 DialogCard::new(cx, |cx| {
                     dialog_title(cx, "REPLACE PRESET");
                     Binding::new(cx, UiState::name, |cx, name| {
-                        let message = format!("\u{201c}{}\u{201d} already exists.", name.get(cx).trim());
+                        let message =
+                            format!("\u{201c}{}\u{201d} already exists.", name.get(cx).trim());
                         dialog_text(cx, &message, 58.0);
                     });
                     dialog_text(cx, "Saving will replace it.", 80.0);
@@ -1434,8 +1477,7 @@ impl Dialogs {
                         .top(Pixels(DIALOG_H - 46.0));
                 });
             }
-            Dialog::Delete(name) => {
-                let name = name.clone();
+            Dialog::Delete { name, path } => {
                 Shade::new(cx);
                 DialogCard::new(cx, move |cx| {
                     dialog_title(cx, "DELETE PRESET");
@@ -1446,9 +1488,8 @@ impl Dialogs {
                     DialogButton::new(cx, "CANCEL", false, |cx| cx.emit(UiEvent::CloseDialog))
                         .left(Pixels(DIALOG_W - 218.0))
                         .top(Pixels(DIALOG_H - 46.0));
-                    let confirmed = name.clone();
                     DialogButton::new(cx, "DELETE", true, move |cx| {
-                        cx.emit(UiEvent::DeletePreset(confirmed.clone()))
+                        cx.emit(UiEvent::DeletePreset(path.clone()))
                     })
                     .left(Pixels(DIALOG_W - 118.0))
                     .top(Pixels(DIALOG_H - 46.0));
@@ -1684,5 +1725,79 @@ mod layout_tests {
     fn a_short_list_needs_no_scrolling() {
         assert_eq!(preset_columns(MAX_PRESET_ROWS), 1);
         assert_eq!(preset_rows(MAX_PRESET_ROWS), MAX_PRESET_ROWS);
+    }
+}
+
+#[cfg(test)]
+mod sheet_tests {
+    use super::STYLESHEET;
+
+    /// The stylesheet has to be well formed, because nothing will say so if
+    /// it is not.
+    ///
+    /// `Context::add_stylesheet` returns `Ok(())` whatever happens, and the
+    /// parse behind it is `if let Ok(stylesheet) = StyleSheet::parse(..)` --
+    /// so one missing semicolon does not break one rule, it silently discards
+    /// the whole sheet, and the caret goes back to transparent black. vizia
+    /// keeps its parser private, so this cannot call it. What it can check is
+    /// the structure, which is what a typo actually breaks.
+    #[test]
+    fn the_stylesheet_is_well_formed() {
+        let mut depth = 0i32;
+        for (line, text) in STYLESHEET.lines().enumerate() {
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            if text.ends_with('{') {
+                depth += 1;
+                continue;
+            }
+            if text == "}" {
+                depth -= 1;
+                assert!(
+                    depth >= 0,
+                    "line {} closes a rule that never opened",
+                    line + 1
+                );
+                continue;
+            }
+            assert!(
+                depth > 0,
+                "line {} is a declaration outside any rule",
+                line + 1
+            );
+            assert!(
+                text.ends_with(';'),
+                "line {} has no semicolon, which discards the whole sheet: {text}",
+                line + 1
+            );
+            assert!(
+                text.contains(':'),
+                "line {} is not a declaration: {text}",
+                line + 1
+            );
+        }
+        assert_eq!(depth, 0, "a rule is left open");
+    }
+
+    /// The caret rule is the one whose absence looks exactly like the fault it
+    /// is there for, so it is named rather than only described: its colour
+    /// has to hang off the class vizia blinks, and be something other than
+    /// the transparent the box starts from.
+    #[test]
+    fn the_caret_blinks_in_a_colour_that_shows() {
+        let rule = STYLESHEET
+            .split("textbox:checked.caret")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("vizia blinks the caret by toggling a `caret` class, so a rule has to name it");
+        let colour = rule
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("caret-color:"))
+            .expect("the caret rule sets a caret colour")
+            .trim()
+            .trim_end_matches(';');
+        assert_ne!(colour, "transparent");
     }
 }

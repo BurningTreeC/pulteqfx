@@ -37,10 +37,11 @@ fn main() -> ExitCode {
         i += 2;
     }
 
-    let get = |k: &str, d: f32| -> f32 {
-        opts.get(k).map(|v| v.parse().unwrap_or(d)).unwrap_or(d)
-    };
-    let part = opts.get("part").cloned().unwrap_or_else(|| "knob_large".into());
+    let get = |k: &str, d: f32| -> f32 { opts.get(k).map(|v| v.parse().unwrap_or(d)).unwrap_or(d) };
+    let part = opts
+        .get("part")
+        .cloned()
+        .unwrap_or_else(|| "knob_large".into());
     let out = opts.get("out").cloned().unwrap_or_else(|| "out.png".into());
     let size = get("size", 441.0) as u32;
     let ss = get("ss", 3.0) as u32;
@@ -63,11 +64,17 @@ fn main() -> ExitCode {
 
     let mut geometry = match part.as_str() {
         "knob_large" => parts::pultec_knob_large(&spec),
-        "knob_pointer" => parts::pultec_knob_pointer(&KnobSpec { radius: 14.0, ..spec }),
+        "knob_pointer" => parts::pultec_knob_pointer(&KnobSpec {
+            radius: 14.0,
+            ..spec
+        }),
         "toggle_up" => parts::pultec_toggle(true, spec.segments),
         "toggle_down" => parts::pultec_toggle(false, spec.segments),
         "lamp" => parts::pultec_lamp(spec.segments),
-        "knob_small" => parts::pultec_knob_small(&KnobSpec { radius: 11.0, ..spec }),
+        "knob_small" => parts::pultec_knob_small(&KnobSpec {
+            radius: 11.0,
+            ..spec
+        }),
         "comp76_knob" => parts::comp76_knob(
             &KnobSpec {
                 flute_count: get("flutes", 12.0) as u32,
@@ -148,7 +155,10 @@ fn main() -> ExitCode {
 
     let rig = Rig::panel();
     let half_extent = radius * margin;
-    let cam = Camera { half_extent, centre: (0.0, 0.0) };
+    let cam = Camera {
+        half_extent,
+        centre: (0.0, 0.0),
+    };
     // The widget has to know how much of the frame the control body fills, so
     // report it rather than leaving the caller to guess a scale multiplier.
     let nominal = get("nominal", radius);

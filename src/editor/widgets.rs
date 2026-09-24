@@ -1,6 +1,7 @@
-//! The panel's controls: knobs, rotary selectors and the equaliser switch.
+//! The panel's controls: knobs, rotary switches, the positions engraved round
+//! them, and the pilot lamp.
 
-use nih_plug::prelude::Param;
+use nih_plug::prelude::{Param, ParamPtr};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
@@ -13,6 +14,8 @@ use super::style::*;
 const DRAG_RANGE: f32 = 260.0;
 /// How much finer the drag becomes while shift is held.
 const FINE: f32 = 0.15;
+/// Pixels a press may wander and still count as a click rather than a drag.
+const CLICK_SLOP: f32 = 3.0;
 
 // ---------------------------------------------------------------------------
 // Rotary knob
@@ -118,6 +121,31 @@ impl View for Knob {
         );
     }
 
+    /// Mouse handling, and the one thing in it that is not obvious.
+    ///
+    /// A drag captures the mouse so that the control keeps receiving movement
+    /// when the pointer leaves it, and releases on the button coming back up.
+    /// That release must not be the *only* way out.
+    ///
+    /// vizia routes every mouse event to the captured entity, and nothing in
+    /// vizia ever clears a capture on its own -- `MouseCaptureOutEvent` is
+    /// declared in its event enum and emitted nowhere, and `release` only
+    /// clears the field when the widget itself asks. So a drag whose button-up
+    /// never arrives leaves this control holding the mouse for the rest of the
+    /// session: every other control stops responding, the window looks frozen,
+    /// and the audio thread carries on as though nothing were wrong. The
+    /// gesture opened with the host is never closed either, so it also thinks
+    /// an edit is still in progress.
+    ///
+    /// A button-up can genuinely go missing. The vendored Windows backend
+    /// now translates native capture loss into button releases and checks
+    /// physical button state on its existing UI frame timer. That repairs both
+    /// the native button tracking and vizia's cached state before another drag.
+    ///
+    /// So the drag is also ended by anything that says the mouse is no longer
+    /// down. The `MouseMove` check is an additional fallback, but cannot by
+    /// itself repair a missing native release: vizia's cached state would still
+    /// say Pressed. Native recovery belongs in the backend, not this widget.
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         // A change from the host or another editor arrives as this event.
         event.map(|param_event, _| {
@@ -216,8 +244,10 @@ impl View for Knob {
 // Rotary selector
 // ---------------------------------------------------------------------------
 
-/// The frequency selector switches: a smaller knob that snaps between
-/// detents, either by dragging or by clicking on the position you want.
+/// The rotary switches: a smaller knob that snaps between detents. Drag it or
+/// scroll it, or click a position engraved round it (see `Detent`); a two way
+/// switch, the power and the equaliser's IN/OUT, is also thrown by clicking
+/// its knob.
 pub struct Selector {
     param: ParamWidgetBase,
     radius: f32,
@@ -231,6 +261,10 @@ pub struct Selector {
     reversed: bool,
     dragging: bool,
     last_y: f32,
+    /// Where the press that began this drag was, and whether the pointer has
+    /// since strayed far enough from it to make the press a drag, not a click.
+    pressed_y: f32,
+    wandered: bool,
     /// Fractional position carried between events so a slow drag still moves.
     travel: f32,
     face: Sprite,
@@ -260,6 +294,8 @@ impl Selector {
             reversed,
             dragging: false,
             last_y: 0.0,
+            pressed_y: 0.0,
+            wandered: false,
             travel: 0.0,
             face: Sprite::new(),
         }
@@ -344,11 +380,17 @@ impl View for Selector {
         });
 
         event.map(|window_event, meta| match window_event {
+            // A second or third press in quick succession arrives as a double
+            // or triple click *instead* of a press, and flicking a switch off
+            // and on again is exactly that.
             WindowEvent::MouseDown(MouseButton::Left)
+            | WindowEvent::MouseDoubleClick(MouseButton::Left)
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
                 self.release_drag(cx);
                 self.dragging = true;
                 self.last_y = cx.mouse().cursory;
+                self.pressed_y = self.last_y;
+                self.wandered = false;
                 self.travel = 0.0;
                 cx.capture();
                 cx.focus();
@@ -357,6 +399,13 @@ impl View for Selector {
             }
             WindowEvent::MouseUp(MouseButton::Left) => {
                 if self.dragging {
+                    // A press that went nowhere throws a two way switch. A
+                    // drag has moved it already, and a switch with more
+                    // positions is set by clicking its engraving instead.
+                    if !self.wandered && self.positions == 2 {
+                        self.select(cx, 1 - self.index() as isize);
+                        cx.needs_redraw();
+                    }
                     self.release_drag(cx);
                     meta.consume();
                 }
@@ -375,6 +424,9 @@ impl View for Selector {
                         self.release_drag(cx);
                         return;
                     }
+                    if (*y - self.pressed_y).abs() > CLICK_SLOP * cx.scale_factor() {
+                        self.wandered = true;
+                    }
                     // One detent every 20 pixels of drag.
                     self.travel += (self.last_y - *y) / (20.0 * cx.scale_factor());
                     self.last_y = *y;
@@ -391,7 +443,11 @@ impl View for Selector {
             }
             WindowEvent::MouseScroll(_, y) => {
                 if *y != 0.0 {
-                    let step = if self.reversed { -y.signum() } else { y.signum() };
+                    let step = if self.reversed {
+                        -y.signum()
+                    } else {
+                        y.signum()
+                    };
                     self.select(cx, self.index() as isize + step as isize);
                     cx.needs_redraw();
                 }
@@ -403,10 +459,51 @@ impl View for Selector {
 }
 
 // ---------------------------------------------------------------------------
+// Engraved positions
+// ---------------------------------------------------------------------------
+
+/// An invisible patch over something engraved that sets a parameter when it
+/// is clicked: a frequency round a selector, the words either side of a
+/// switch, a segment of the oversampling row. The engraving itself is only
+/// lettering and never sees the pointer, so this is what answers for it.
+pub struct Detent {
+    param: ParamPtr,
+    normalized: f32,
+}
+
+impl Detent {
+    pub fn new(cx: &mut Context, param: ParamPtr, normalized: f32) -> Handle<'_, Self> {
+        Self { param, normalized }.build(cx, |_| {})
+    }
+}
+
+impl View for Detent {
+    fn element(&self) -> Option<&'static str> {
+        Some("pulteqfx-detent")
+    }
+
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        let (param, normalized) = (self.param, self.normalized);
+        event.map(|window_event, meta| match window_event {
+            WindowEvent::MouseDown(MouseButton::Left)
+            | WindowEvent::MouseDoubleClick(MouseButton::Left)
+            | WindowEvent::MouseTripleClick(MouseButton::Left) => {
+                cx.emit(RawParamEvent::BeginSetParameter(param));
+                cx.emit(RawParamEvent::SetParameterNormalized(param, normalized));
+                cx.emit(RawParamEvent::EndSetParameter(param));
+                cx.needs_redraw();
+                meta.consume();
+            }
+            _ => {}
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Pilot lamp
 // ---------------------------------------------------------------------------
 
-/// The red jewel next to the switches, lit while the equaliser is in circuit.
+/// The red jewel beside the power switch, lit while the unit is switched on.
 pub struct Lamp {
     param: ParamWidgetBase,
     /// One cache per state: an image belongs to the canvas that uploaded it,
@@ -449,31 +546,8 @@ impl View for Lamp {
         Some("pulteqfx-lamp")
     }
 
-    /// Mouse handling, and the one thing in it that is not obvious.
-    ///
-    /// A drag captures the mouse so that the control keeps receiving movement
-    /// when the pointer leaves it, and releases on the button coming back up.
-    /// That release must not be the *only* way out.
-    ///
-    /// vizia routes every mouse event to the captured entity, and nothing in
-    /// vizia ever clears a capture on its own -- `MouseCaptureOutEvent` is
-    /// declared in its event enum and emitted nowhere, and `release` only
-    /// clears the field when the widget itself asks. So a drag whose button-up
-    /// never arrives leaves this control holding the mouse for the rest of the
-    /// session: every other control stops responding, the window looks frozen,
-    /// and the audio thread carries on as though nothing were wrong. The
-    /// gesture opened with the host is never closed either, so it also thinks
-    /// an edit is still in progress.
-    ///
-    /// A button-up can genuinely go missing. The vendored Windows backend
-    /// now translates native capture loss into button releases and checks
-    /// physical button state on its existing UI frame timer. That repairs both
-    /// the native button tracking and vizia's cached state before another drag.
-    ///
-    /// So the drag is also ended by anything that says the mouse is no longer
-    /// down. The `MouseMove` check is an additional fallback, but cannot by
-    /// itself repair a missing native release: vizia's cached state would still
-    /// say Pressed. Native recovery belongs in the backend, not this widget.
+    /// The lamp is only ever looked at; all it listens for is the power
+    /// being switched from somewhere else.
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|param_event, _| {
             if let RawParamEvent::ParametersChanged = param_event {

@@ -1,6 +1,6 @@
 [package]
 name = "pulteqfx"
-version = "0.6.0"
+version = "0.11.0"
 edition = "2021"
 authors = ["Simon Huber <huber.simon@protonmail.com>"]
 license = "GPL-3.0-or-later"
@@ -25,6 +25,10 @@ standalone = ["nih_plug/standalone"]
 [dependencies]
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "f36931f7af4646065488a9845d8f8c2f95252c23" }
 nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "f36931f7af4646065488a9845d8f8c2f95252c23" }
+# The same GUI backend vizia uses, which the patch below points at
+# `vendor/baseview`. Named directly only for its text-entry switch, which tells
+# it on Windows that the preset-name box wants the keyboard.
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "2c1b1a7b0fef1a29a5150a6a8f6fef6a0cbab8c4" }
 
 # For reading and writing preset files.
 serde = { version = "1.0", features = ["derive"] }

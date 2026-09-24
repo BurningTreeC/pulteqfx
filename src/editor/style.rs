@@ -33,7 +33,6 @@ pub const SWEEP: f32 = 250.0;
 pub const PANEL_TOP: u32 = 0x365660;
 pub const PANEL_BOTTOM: u32 = 0x1e353c;
 
-
 pub fn rgb(hex: u32) -> vg::Color {
     vg::Color::rgb(
         ((hex >> 16) & 0xff) as u8,

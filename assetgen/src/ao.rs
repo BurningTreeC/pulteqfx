@@ -31,7 +31,12 @@ impl Grid {
             ((extent.y / cell).ceil() as usize + 1).max(1),
             ((extent.z / cell).ceil() as usize + 1).max(1),
         ];
-        let mut grid = Grid { min, cell, dim, buckets: vec![Vec::new(); dim[0] * dim[1] * dim[2]] };
+        let mut grid = Grid {
+            min,
+            cell,
+            dim,
+            buckets: vec![Vec::new(); dim[0] * dim[1] * dim[2]],
+        };
         for (i, t) in mesh.tris.iter().enumerate() {
             let p: Vec<Vec3> = t.iter().map(|v| mesh.verts[*v as usize].pos).collect();
             let lo = v3(
@@ -96,7 +101,15 @@ fn hit(orig: Vec3, dir: Vec3, a: Vec3, b: Vec3, c: Vec3, max_t: f32) -> bool {
 }
 
 /// March the grid along the ray, testing triangles until something is hit.
-fn occluded(grid: &Grid, mesh: &Mesh, orig: Vec3, dir: Vec3, max_t: f32, seen: &mut [u32], tag: u32) -> bool {
+fn occluded(
+    grid: &Grid,
+    mesh: &Mesh,
+    orig: Vec3,
+    dir: Vec3,
+    max_t: f32,
+    seen: &mut [u32],
+    tag: u32,
+) -> bool {
     let mut cell = grid.cell_of(orig);
     let step = [
         if dir.x > 0.0 { 1i32 } else { -1 },
@@ -187,7 +200,8 @@ pub fn bake(mesh: &mut Mesh, samples: u32, radius: f32) {
             // Cosine-weighted hemisphere around the normal.
             let r = u1.sqrt();
             let phi = 2.0 * PI * u2;
-            let dir = (tangent * (r * phi.cos()) + bitangent * (r * phi.sin())
+            let dir = (tangent * (r * phi.cos())
+                + bitangent * (r * phi.sin())
                 + n * (1.0 - u1).max(0.0).sqrt())
             .normalise();
             let tag = (vi as u32).wrapping_mul(samples).wrapping_add(s);

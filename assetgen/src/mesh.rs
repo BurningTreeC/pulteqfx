@@ -104,7 +104,6 @@ impl Mesh {
             .map(|v| v.pos.x.hypot(v.pos.y))
             .fold(0.0, f32::max)
     }
-
 }
 
 /// How the radius is scalloped with angle.
@@ -125,7 +124,13 @@ pub struct Flute {
 
 impl Default for Flute {
     fn default() -> Self {
-        Self { count: 13, depth: 0.10, sharpness: 0.62, phase: 0.0, sides: 0 }
+        Self {
+            count: 13,
+            depth: 0.10,
+            sharpness: 0.62,
+            phase: 0.0,
+            sides: 0,
+        }
     }
 }
 
@@ -152,7 +157,13 @@ pub struct Ring {
 
 impl Ring {
     pub fn new(r: f32, z: f32, mat: u16) -> Self {
-        Self { r, z, flute: 0.0, mat, sharp: false }
+        Self {
+            r,
+            z,
+            flute: 0.0,
+            mat,
+            sharp: false,
+        }
     }
     pub fn fluted(mut self, amount: f32) -> Self {
         self.flute = amount;
@@ -247,7 +258,9 @@ pub fn revolve_into(mesh: &mut Mesh, profile: &[Ring], segments: u32, flute: &Fl
     let mut bottom: Vec<Vec<u32>> = Vec::with_capacity(profile.len());
 
     for (i, ring) in profile.iter().enumerate() {
-        let back = i.checked_sub(1).map(|p| emit(mesh, ring, &profile[p], seg, flute, true));
+        let back = i
+            .checked_sub(1)
+            .map(|p| emit(mesh, ring, &profile[p], seg, flute, true));
         let fwd = profile
             .get(i + 1)
             .map(|n| emit(mesh, ring, n, seg, flute, false));

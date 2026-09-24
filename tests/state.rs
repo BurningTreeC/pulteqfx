@@ -35,7 +35,10 @@ fn the_window_scale_is_persisted() {
 
     // A state saved at 140 % should come back at 140 %.
     let scaled = editor_state.replace("1.0", "1.4");
-    assert_ne!(scaled, *editor_state, "the test needs to actually change it");
+    assert_ne!(
+        scaled, *editor_state,
+        "the test needs to actually change it"
+    );
     let mut restored = std::collections::BTreeMap::new();
     restored.insert("editor-state".to_string(), scaled);
 

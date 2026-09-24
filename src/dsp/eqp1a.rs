@@ -204,8 +204,10 @@ impl Eqp1a {
             self.tank_l.set(ind, warp);
         }
         if c.high_atten_freq != self.controls.high_atten_freq {
-            self.hi_cut_c
-                .set(hi_cut_cap(c.high_atten_freq), prewarped(c.high_atten_freq, fs));
+            self.hi_cut_c.set(
+                hi_cut_cap(c.high_atten_freq),
+                prewarped(c.high_atten_freq, fs),
+            );
         }
         if c.low_freq != self.controls.low_freq {
             let (small, large) = low_freq_caps(c.low_freq);

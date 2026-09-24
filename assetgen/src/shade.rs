@@ -114,7 +114,6 @@ impl Rig {
     }
 }
 
-
 /// Deterministic value noise, so a rebuild is byte-identical.
 fn hash3(x: i32, y: i32, z: i32) -> f32 {
     let mut h = (x as u32).wrapping_mul(0x8da6_b343)

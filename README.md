@@ -60,10 +60,30 @@ checking each one:
 The front panel is the hardware's. The left hand knob is the EQ IN/OUT
 switch, which lifts the passive network out of circuit but leaves the amplifier
 in it. The OFF/ON knob at the right takes the whole unit out of circuit, and
-the pilot lamp follows it.
+the pilot lamp follows it. Switched off, the signal still comes out as late as
+the reported latency says, so the track stays in time with the rest of the
+session whichever way the switch sits.
 
 The strip above the panel is not on the hardware. It carries the preset drop
 down, a save button and the settings button.
+
+Nor are the two level meters, one either side of the controls, there for gain
+staging: **INPUT** on the left reads what arrives, and **OUTPUT** on the right
+what leaves, after the output trim, or the dry signal with the power off. They
+read in dBFS, on the scale DAW peak meters use, from −60 to +6, with a bar per
+channel. Each bar rises to a peak at once and falls back at 20 dB in 1.7 s,
+with a line holding its highest point for two seconds; it is solid up to the
+RMS level and fainter from there to the peak. A lamp above each bar lights at
+the first sample at or over full scale and stays lit. Under each meter are the
+figures a level is set by, to a tenth of a decibel: **PEAK**, the highest
+sample since it was cleared, which turns red once full scale has been reached,
+and **RMS**, the average over the last 300 ms, which a full scale sine reads as
+−3.0 and which moves five times a second so it can be read. Clicking a meter or its peak figure clears them. They are sample peaks;
+a peak between samples is not measured.
+
+Right of the output meter, where they can be set against it, are the
+amplifier's two trims, also not on the hardware: **DRIVE** above, from 0 to
+100 %, and **OUTPUT** below, ±24 dB, each with its setting lettered under it.
 
 Presets are the panel's parameter values, minus the oversampling setting,
 which is a choice about the machine rather than the sound. The loaded preset's
@@ -74,10 +94,14 @@ where it was clears the dot again. **Low End Punch** is
 built in: the low end trick at 100 cps with a little 10 kc air, which measures
 +7.7 dB at the bottom, +6.4 dB at 100 Hz, a scoop through 500 Hz and +6 dB of
 air on top. Saving asks for a name, and confirms first if that name is already
-one of yours. Saved presets are one JSON file each under
-`~/.config/pulteqfx/presets`, so they can be copied between machines or edited
-by hand, and each carries a cross to delete it, which asks before removing the
-file.
+one of yours, whatever its case, and then replaces that preset in whichever
+file it lives. A new name that would come out as an existing file's name, as
+"A/B" and "A_B" both would, gets a numbered file of its own rather than taking
+the other one over. Saved presets are one JSON file each, under
+`~/.config/pulteqfx/presets` on Linux and macOS and
+`%APPDATA%\PultEQFx\Presets` on Windows, so they can be copied between machines
+or edited by hand, and each carries a cross to delete it, which asks before
+removing the file.
 
 A built-in preset has no file, so it cannot be deleted, and saving under its
 name writes a preset of your own beside it rather than replacing it in the
@@ -90,14 +114,18 @@ The settings button holds:
   drawn rather than pictured, so they stay sharp at any size, and the rendered
   metal is generated large enough to hold up at the top of the range.
 * **Oversampling**, off through 8x. The equalizer is prewarped and accurate
-  without it; oversampling is there for the amplifier's saturation. The plugin
-  always reports 74 samples of latency and pads the shorter settings out to
-  match, so switching quality never changes the reported latency while the
-  host is running.
-* **Drive** and **output** trim for the amplifier.
+  without it, and so is the amplifier's frequency response, which stays within
+  a tenth of a decibel of the analog circuit at every setting; oversampling is
+  there for the amplifier's saturation. The plugin always reports 74 samples of
+  latency and pads the shorter settings out to match, so switching quality
+  never changes the reported latency while the host is running. A new setting
+  is brought up alongside the old one and faded in a fifth of a second later,
+  rather than dropping out while it fills.
 
 Knobs respond to drag, scroll, shift for a finer grip and double click to
-reset.
+reset. The switches turn by drag or scroll, or by clicking one of the values
+engraved round them, and the two way ones, EQ IN/OUT and OFF/ON, also throw
+with a click on the knob.
 
 ## The panel
 
@@ -238,7 +266,10 @@ python3 tools/third-party-notices.py
 | `src/editor/sprites.rs` | the rendered knob and the screws |
 | `assetgen/` | the renderer that generates the knobs |
 | `src/presets.rs` | built-in and saved presets |
+| `src/meters.rs` | the input and output levels the meters read |
+| `src/editor/meter.rs` | the meters themselves |
 | `tests/response.rs` | frequency response against the published curves |
+| `tests/latency.rs` | the reported latency, and switching without a gap |
 | `tests/presets.rs` | preset storage round trip |
 | `tests/state.rs` | what survives a save and reload |
 | `tools/third-party-notices.py` | regenerates the dependency licence file |

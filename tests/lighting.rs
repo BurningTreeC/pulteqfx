@@ -10,7 +10,9 @@
 //! These are the arithmetic parts of that agreement. What a render looks like
 //! is not testable here; where the light is, is.
 
-use pulteqfx::editor::style::{light_at, BOTTOM_ROW, PANEL_H, PANEL_W, SHADOW_X, SHADOW_Y, TOP_ROW};
+use pulteqfx::editor::style::{
+    light_at, BOTTOM_ROW, PANEL_H, PANEL_W, SHADOW_X, SHADOW_Y, TOP_ROW,
+};
 
 /// Shadows fall away from the light, so both offsets are positive: right and
 /// down. A shadow straight below a control is a lamp directly overhead, and
@@ -95,7 +97,11 @@ fn the_falloff_is_worth_seeing_and_no_more() {
     assert!(
         (0.10..=0.35).contains(&spread),
         "corner to corner the light changes by {spread:.3}, which is {} to see",
-        if spread < 0.10 { "too little" } else { "too much" }
+        if spread < 0.10 {
+            "too little"
+        } else {
+            "too much"
+        }
     );
     assert!(
         light_at(PANEL_W, PANEL_H) > 0.6,

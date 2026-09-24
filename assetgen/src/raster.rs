@@ -46,7 +46,14 @@ pub fn render(
     let verts: Vec<(Vec3, Vec3, f32, u16)> = mesh
         .verts
         .iter()
-        .map(|v| (v.pos.rotate_z(radians), v.normal.rotate_z(radians), v.ao, v.mat))
+        .map(|v| {
+            (
+                v.pos.rotate_z(radians),
+                v.normal.rotate_z(radians),
+                v.ao,
+                v.mat,
+            )
+        })
         .collect();
 
     let scale = n as f32 / (2.0 * cam.half_extent);
@@ -68,10 +75,20 @@ pub fn render(
         }
         let s: Vec<(f32, f32)> = p.iter().map(|&q| to_screen(q)).collect();
 
-        let minx = s.iter().map(|q| q.0).fold(f32::MAX, f32::min).floor().max(0.0) as usize;
+        let minx = s
+            .iter()
+            .map(|q| q.0)
+            .fold(f32::MAX, f32::min)
+            .floor()
+            .max(0.0) as usize;
         let maxx = (s.iter().map(|q| q.0).fold(f32::MIN, f32::max).ceil() as isize)
             .clamp(0, n as isize - 1) as usize;
-        let miny = s.iter().map(|q| q.1).fold(f32::MAX, f32::min).floor().max(0.0) as usize;
+        let miny = s
+            .iter()
+            .map(|q| q.1)
+            .fold(f32::MAX, f32::min)
+            .floor()
+            .max(0.0) as usize;
         let maxy = (s.iter().map(|q| q.1).fold(f32::MIN, f32::max).ceil() as isize)
             .clamp(0, n as isize - 1) as usize;
         if minx > maxx || miny > maxy {
@@ -101,7 +118,8 @@ pub fn render(
                 depth[idx] = z;
 
                 let pos = p[0] * w0 + p[1] * w1 + p[2] * w2;
-                let nrm = (verts[i[0]].1 * w0 + verts[i[1]].1 * w1 + verts[i[2]].1 * w2).normalise();
+                let nrm =
+                    (verts[i[0]].1 * w0 + verts[i[1]].1 * w1 + verts[i[2]].1 * w2).normalise();
                 let ao = verts[i[0]].2 * w0 + verts[i[1]].2 * w1 + verts[i[2]].2 * w2;
                 let mat = &mesh.mats[verts[i[0]].3 as usize];
                 colour[idx] = shade(rig, mat, pos, nrm, view, ao);
@@ -136,5 +154,9 @@ pub fn render(
         }
     }
 
-    Framebuffer { width: size, height: size, pixels }
+    Framebuffer {
+        width: size,
+        height: size,
+        pixels,
+    }
 }

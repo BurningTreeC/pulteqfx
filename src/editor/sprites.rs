@@ -102,7 +102,14 @@ pub struct Placement {
 
 impl Placement {
     pub fn new(x: f32, y: f32, height: f32, degrees: f32, pivot: (f32, f32)) -> Self {
-        Self { x, y, height, degrees, pivot, lit: 1.0 }
+        Self {
+            x,
+            y,
+            height,
+            degrees,
+            pivot,
+            lit: 1.0,
+        }
     }
 
     pub fn lit(mut self, lit: f32) -> Self {
@@ -217,5 +224,4 @@ impl Sprite {
         );
         canvas.restore();
     }
-
 }

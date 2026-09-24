@@ -8,9 +8,10 @@ use crate::mesh::{revolve_into, smooth_normals, Flute, Material, Mesh, Ring, Ver
 use crate::vec::{v3, Vec3};
 use std::f32::consts::PI;
 
-pub const CROWN: Material = Material::new(v3(0.0205, 0.0205, 0.0235), 0.250, 0.0)
-    .textured(0.055, 4.6);
-pub const BAKELITE: Material = Material::new(v3(0.0235, 0.0235, 0.026), 0.345, 0.0).textured(0.115, 4.1);
+pub const CROWN: Material =
+    Material::new(v3(0.0205, 0.0205, 0.0235), 0.250, 0.0).textured(0.055, 4.6);
+pub const BAKELITE: Material =
+    Material::new(v3(0.0235, 0.0235, 0.026), 0.345, 0.0).textured(0.115, 4.1);
 /// Spun aluminium. Metallic, so its colour comes from the reflection rather
 /// than a diffuse term, and heavily brushed around the axis.
 ///
@@ -25,12 +26,12 @@ pub const ALUMINIUM: Material = Material::new(v3(0.650, 0.659, 0.670), 0.302, 1.
 /// The indicator rivet.
 pub const BRASS: Material = Material::new(v3(0.812, 0.678, 0.412), 0.34, 1.0);
 /// Nickel-plated hardware. Not a mirror: the reference bushings are satin.
-pub const CHROME: Material = Material::new(v3(0.782, 0.771, 0.742), 0.215, 1.0)
-    .textured(0.026, 12.0);
+pub const CHROME: Material =
+    Material::new(v3(0.782, 0.771, 0.742), 0.215, 1.0).textured(0.026, 12.0);
 /// The lens is lit from behind when the unit is powered, which is why it needs
 /// an emissive term rather than just a red albedo.
-pub const JEWEL: Material = Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0)
-    .glowing(v3(0.172, 0.0020, 0.0012));
+pub const JEWEL: Material =
+    Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0).glowing(v3(0.172, 0.0020, 0.0012));
 /// The lens of a pilot lamp with the lamp actually behind it.
 ///
 /// `JEWEL`'s emissive term was set for a lens read at a glance beside a much
@@ -38,8 +39,8 @@ pub const JEWEL: Material = Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0)
 /// brightest thing on the faceplate and has to be rendered as a source rather
 /// than as a red object catching the key light. Five times the emission, which
 /// is what puts it clear of the enamel around it.
-pub const JEWEL_LAMP: Material = Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0)
-    .glowing(v3(0.86, 0.052, 0.030));
+pub const JEWEL_LAMP: Material =
+    Material::new(v3(0.271, 0.0045, 0.0036), 0.070, 0.0).glowing(v3(0.86, 0.052, 0.030));
 
 /// The same lens with the lamp behind it out: identical albedo, no emissive
 /// term. A dark jewel is not a bright one with less light on it -- its
@@ -79,7 +80,13 @@ fn bar_into(
     const BODY: u32 = 8;
     for i in 1..BODY {
         let t = i as f32 / BODY as f32;
-        spine.push((x0 + (x1 - x0) * t, 1.0, 0.0, ry0 + (ry1 - ry0) * t, rz0 + (rz1 - rz0) * t));
+        spine.push((
+            x0 + (x1 - x0) * t,
+            1.0,
+            0.0,
+            ry0 + (ry1 - ry0) * t,
+            rz0 + (rz1 - rz0) * t,
+        ));
     }
     for i in 0..=CAP {
         let a = (CAP - i) as f32 / CAP as f32 * PI / 2.0;
@@ -216,7 +223,7 @@ pub fn pultec_knob_large(spec: &KnobSpec) -> Mesh {
         (0.300, 0.991, 0.0, false, true),
         (0.505, 0.968, 0.0, false, true),
         (0.615, 0.938, 0.0, false, true),
-        (0.658, 0.922, 0.0, true, true),  // crown edge, catches the key
+        (0.658, 0.922, 0.0, true, true), // crown edge, catches the key
         (0.684, 0.898, 0.0, true, false), // chamfer down into the groove
         (0.706, 0.836, 0.0, true, false), // groove wall
         // The groove has to be wide enough to survive being drawn at 88px, or
@@ -330,7 +337,15 @@ pub fn pultec_knob_pointer(spec: &KnobSpec) -> Mesh {
         })
         .collect();
     // A plain skirt: no flutes on this one.
-    revolve_into(&mut mesh, &rings, spec.segments, &Flute { depth: 0.0, ..Flute::default() });
+    revolve_into(
+        &mut mesh,
+        &rings,
+        spec.segments,
+        &Flute {
+            depth: 0.0,
+            ..Flute::default()
+        },
+    );
 
     // (distance along the blade, half width, half height), all as fractions of
     // the skirt radius. The widest point is half the skirt radius across,
@@ -385,10 +400,18 @@ pub struct Comp76Knob {
 }
 
 impl Comp76Knob {
-    pub const LARGE: Self =
-        Self { cap: 0.585, dot_at: 0.767, dot_radius: 0.076, brass_dot: true };
-    pub const SMALL: Self =
-        Self { cap: 0.565, dot_at: 0.735, dot_radius: 0.088, brass_dot: false };
+    pub const LARGE: Self = Self {
+        cap: 0.585,
+        dot_at: 0.767,
+        dot_radius: 0.076,
+        brass_dot: true,
+    };
+    pub const SMALL: Self = Self {
+        cap: 0.565,
+        dot_at: 0.735,
+        dot_radius: 0.088,
+        brass_dot: false,
+    };
 }
 
 pub fn comp76_knob(spec: &KnobSpec, style: &Comp76Knob) -> Mesh {
@@ -402,7 +425,7 @@ pub fn comp76_knob(spec: &KnobSpec, style: &Comp76Knob) -> Mesh {
     let profile: &[(f32, f32, f32, bool, bool)] = &[
         (0.000, 0.930, 0.0, false, true),
         (0.420, 0.928, 0.0, false, true),
-        (style.cap, 0.924, 0.0, true, true), // cap edge
+        (style.cap, 0.924, 0.0, true, true),          // cap edge
         (style.cap + 0.013, 0.893, 0.0, true, false), // drops into the recess
         (style.cap + 0.029, 0.892, 0.0, true, false), // recess floor
         (style.cap + 0.043, 0.982, 0.0, true, false), // rim rises proud of the cap
@@ -489,7 +512,15 @@ pub fn pultec_knob_small(spec: &KnobSpec) -> Mesh {
         .iter()
         .map(|&(x, w, h)| (x * r, w * r, h * r, 0.0))
         .collect();
-    blade_into(&mut mesh, &scaled, 72, 2.15, matte, v3(0.0, 0.0, 0.450 * r), spin);
+    blade_into(
+        &mut mesh,
+        &scaled,
+        72,
+        2.15,
+        matte,
+        v3(0.0, 0.0, 0.450 * r),
+        spin,
+    );
 
     // The stripe rides the sloping neck, so its half-height is set from the
     // body surface at each station rather than being a constant offset.
@@ -498,7 +529,11 @@ pub fn pultec_knob_small(spec: &KnobSpec) -> Mesh {
         let mut prev = body[0];
         for &s in body {
             if s.0 >= x {
-                let t = if (s.0 - prev.0).abs() < 1e-6 { 0.0 } else { (x - prev.0) / (s.0 - prev.0) };
+                let t = if (s.0 - prev.0).abs() < 1e-6 {
+                    0.0
+                } else {
+                    (x - prev.0) / (s.0 - prev.0)
+                };
                 return 0.450 + prev.2 + (s.2 - prev.2) * t;
             }
             prev = s;
@@ -514,9 +549,7 @@ pub fn pultec_knob_small(spec: &KnobSpec) -> Mesh {
         (3.090, 0.020),
     ]
     .iter()
-    .map(|&(x, w): &(f32, f32)| {
-        (x * r, w * r, 0.030 * r, (surface(x) - 0.018) * r)
-    })
+    .map(|&(x, w): &(f32, f32)| (x * r, w * r, 0.030 * r, (surface(x) - 0.018) * r))
     .collect();
     blade_into(&mut mesh, &stripe, 40, 2.6, ivory, Vec3::ZERO, spin);
 
@@ -563,7 +596,13 @@ pub fn pultec_toggle(up: bool, segments: u32) -> Mesh {
         &mut mesh,
         &knurl,
         segments,
-        &Flute { count: 46, depth: 0.030, sharpness: 1.0, phase: 0.0, sides: 0 },
+        &Flute {
+            count: 46,
+            depth: 0.030,
+            sharpness: 1.0,
+            phase: 0.0,
+            sides: 0,
+        },
     );
 
     // Hex nut. `sides` makes Ring::r the distance to a flat.
@@ -583,7 +622,13 @@ pub fn pultec_toggle(up: bool, segments: u32) -> Mesh {
         &mut mesh,
         &nut,
         segments,
-        &Flute { count: 0, depth: 0.0, sharpness: 1.0, phase: 0.0, sides: 6 },
+        &Flute {
+            count: 0,
+            depth: 0.0,
+            sharpness: 1.0,
+            phase: 0.0,
+            sides: 6,
+        },
     );
 
     // Domed shoulder the bat pivots out of.
@@ -600,7 +645,15 @@ pub fn pultec_toggle(up: bool, segments: u32) -> Mesh {
         chrome,
         0.0,
     );
-    revolve_into(&mut mesh, &dome, segments, &Flute { depth: 0.0, ..Flute::default() });
+    revolve_into(
+        &mut mesh,
+        &dome,
+        segments,
+        &Flute {
+            depth: 0.0,
+            ..Flute::default()
+        },
+    );
 
     // The bat, built upright then tilted about its base.
     let bat_start = mesh.verts.len();
@@ -622,7 +675,15 @@ pub fn pultec_toggle(up: bool, segments: u32) -> Mesh {
         chrome,
         0.0,
     );
-    revolve_into(&mut mesh, &bat, segments, &Flute { depth: 0.0, ..Flute::default() });
+    revolve_into(
+        &mut mesh,
+        &bat,
+        segments,
+        &Flute {
+            depth: 0.0,
+            ..Flute::default()
+        },
+    );
     // Screen up is world +Y, and rotate_x by a positive angle carries the top
     // of the bat toward -Y. So the thrown-up position needs a negative tilt.
     let tilt = if up { -31.0_f32 } else { 31.0_f32 };
@@ -658,7 +719,13 @@ pub fn pultec_lamp(segments: u32) -> Mesh {
         &mut mesh,
         &bezel,
         segments,
-        &Flute { count: 0, depth: 0.0, sharpness: 1.0, phase: 0.0, sides: 6 },
+        &Flute {
+            count: 0,
+            depth: 0.0,
+            sharpness: 1.0,
+            phase: 0.0,
+            sides: 6,
+        },
     );
 
     // A dome with concentric steps pressed into it.
@@ -673,7 +740,15 @@ pub fn pultec_lamp(segments: u32) -> Mesh {
         lens.push((r, dome + ripple, false));
     }
     let rings = ring_list(&lens, a, jewel, 0.0);
-    revolve_into(&mut mesh, &rings, segments, &Flute { depth: 0.0, ..Flute::default() });
+    revolve_into(
+        &mut mesh,
+        &rings,
+        segments,
+        &Flute {
+            depth: 0.0,
+            ..Flute::default()
+        },
+    );
 
     mesh
 }
