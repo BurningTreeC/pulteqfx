@@ -174,7 +174,7 @@ impl Plugin for PultEqFx {
                 self.params.high_atten.smoothed.next_step(steps),
                 self.params.bandwidth.smoothed.next_step(steps),
             );
-            let drive = (self.params.drive.smoothed.next_step(steps) / 100.0) as f64;
+            let drive = self.params.drive.smoothed.next_step(steps) as f64;
             let output = util::db_to_gain(self.params.output.smoothed.next_step(steps));
             // The output trim belongs to the amplifier, so it leaves circuit
             // with the rest of the unit.

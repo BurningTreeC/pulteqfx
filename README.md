@@ -40,8 +40,11 @@ told you not to do it.
   a 44.1 kHz sample rate instead of sliding down towards Nyquist.
 * **The make-up amplifier** contributes the rest of the character: mostly odd
   order harmonics from the push-pull stage with a little second order from its
-  imbalance, plus the bandwidth limits of the iron at both ends. The `DRIVE`
-  control is the one liberty taken with the hardware.
+  imbalance, plus the bandwidth limits of the iron at both ends. It is clean
+  at the usual −18 dBFS operating level and runs gently out of headroom as the
+  peaks approach full scale. The `DRIVE` control is the one liberty taken with
+  the hardware: it hits the amplifier harder, as more level into the hardware
+  would, so the sound gets louder and dirtier together.
 
 Measured against the published curves, with the tests in `tests/response.rs`
 checking each one:
@@ -82,8 +85,16 @@ and **RMS**, the average over the last 300 ms, which a full scale sine reads as
 a peak between samples is not measured.
 
 Right of the output meter, where they can be set against it, are the
-amplifier's two trims, also not on the hardware: **DRIVE** above, from 0 to
-100 %, and **OUTPUT** below, ±24 dB, each with its setting lettered under it.
+amplifier's two trims, also not on the hardware: **DRIVE** above, up to 18 dB
+more level into the amplifier, and **OUTPUT** below, ±24 dB, each with its
+setting lettered under it. Turning DRIVE up makes the sound louder and
+dirtier, as it would on the hardware; bring the level back down with OUTPUT,
+watching the output meter.
+
+Up to 0.11, DRIVE was a saturation amount from 0 to 100 % that kept the level
+and squashed only the peaks, so turning it up made loud material quieter. A
+session saved with it opens with DRIVE at 0 dB, and Low End Punch has been
+moved across to settings that sound as it did.
 
 Presets are the panel's parameter values, minus the oversampling setting,
 which is a choice about the machine rather than the sound. The loaded preset's
@@ -270,6 +281,7 @@ python3 tools/third-party-notices.py
 | `src/editor/meter.rs` | the meters themselves |
 | `tests/response.rs` | frequency response against the published curves |
 | `tests/latency.rs` | the reported latency, and switching without a gap |
+| `tests/drive.rs` | what DRIVE does, and Low End Punch against the old drive |
 | `tests/presets.rs` | preset storage round trip |
 | `tests/state.rs` | what survives a save and reload |
 | `tools/third-party-notices.py` | regenerates the dependency licence file |

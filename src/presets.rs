@@ -34,8 +34,14 @@ const BUILT_IN: &[(&str, &[(&str, f32)])] = &[(
         ("hiboost", 3.0),
         ("hiafreq", 1.0), // 10 kc
         ("hiatten", 0.0),
-        ("drive", 25.0),
-        ("output", 0.0),
+        // A touch of the amplifier: 5.5 dB more level into it, taken back off
+        // at the output. That is what the 25 % of the old drive control did,
+        // which held the level and squashed only the peaks. The level matches
+        // it to a hundredth of a decibel and the third harmonic to a tenth;
+        // the second comes out a decibel higher. `tests/drive.rs` holds it
+        // to that.
+        ("drivedb", 5.5),
+        ("output", -5.5),
     ],
 )];
 
@@ -331,6 +337,27 @@ fn file_stem(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A built-in preset's settings are looked up by parameter id, and one
+    /// that names no parameter is dropped without a word -- which is what a
+    /// renamed id would do to every preset that sets it.
+    #[test]
+    fn every_built_in_setting_names_a_parameter() {
+        let params = crate::params::PultEqFxParams::default();
+        let ids: Vec<String> = params
+            .param_map()
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        for (preset, dials) in BUILT_IN {
+            for (id, _) in dials.iter() {
+                assert!(
+                    ids.iter().any(|known| known == id),
+                    "{preset} sets `{id}`, which is not a parameter"
+                );
+            }
+        }
+    }
 
     /// Where a Windows host actually looks.
     ///

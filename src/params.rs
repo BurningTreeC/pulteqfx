@@ -167,7 +167,15 @@ pub struct PultEqFxParams {
     pub power: BoolParam,
     #[id = "eqin"]
     pub eq_in: BoolParam,
-    #[id = "drive"]
+    /// The level into the amplifier, in dB.
+    ///
+    /// The id changed with the meaning. Up to 0.11 this was `drive`, a
+    /// saturation amount from 0 to 100 % that held quiet signals at the same
+    /// level and squashed loud ones. Under the old id, a session saved with it
+    /// would have had its setting read as up to 18 dB more level into the
+    /// amplifier, a loud surprise on opening; under a new one the old value is
+    /// simply not found, and the session opens with the drive at rest.
+    #[id = "drivedb"]
     pub drive: FloatParam,
     #[id = "output"]
     pub output: FloatParam,
@@ -237,17 +245,20 @@ impl Default for PultEqFxParams {
             eq_in: BoolParam::new("EQ In", true)
                 .with_value_to_string(Arc::new(|v| if v { "IN" } else { "OUT" }.to_string()))
                 .with_string_to_value(Arc::new(|s| Some(switch_on(s)))),
+            // How much harder the amplifier is hit than the signal arrives,
+            // as turning up the level into the hardware would. The output trim
+            // after it brings the level back down.
             drive: FloatParam::new(
                 "Drive",
-                15.0,
+                0.0,
                 FloatRange::Linear {
                     min: 0.0,
-                    max: 100.0,
+                    max: 18.0,
                 },
             )
-            .with_unit(" %")
+            .with_unit(" dB")
             .with_smoother(SmoothingStyle::Linear(30.0))
-            .with_value_to_string(formatters::v2s_f32_rounded(0)),
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
             output: FloatParam::new(
                 "Output",
                 0.0,

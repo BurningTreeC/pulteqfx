@@ -6,9 +6,16 @@
 //! contributes mostly odd order harmonics with a little second order from the
 //! stage imbalance, plus the bandwidth limits of the iron at both ends.
 //!
-//! The `drive` control is the one liberty this plugin takes with the hardware.
-//! At zero it is close to a straight wire; the original sits somewhere around
-//! the lower quarter of the range at normal operating level.
+//! The stage itself is fixed, as the hardware's is: clean at the level the
+//! unit is run at, and running gently out of headroom as the peaks approach
+//! digital full scale. What it sounds like is decided by how hard it is hit.
+//!
+//! The `drive` control is the one liberty this plugin takes with the hardware,
+//! and it does what hitting the hardware harder does: it raises the level into
+//! the stage, so the sound gets louder and dirtier together, and the output
+//! trim after it brings the level back. It used to be a saturation amount that
+//! held quiet signals at the same level and squashed loud ones, which read as a
+//! compressor that made things quieter the further it was turned up.
 
 use std::f64::consts::TAU;
 
@@ -101,25 +108,27 @@ pub struct TubeStage {
     coupling: OnePole,
     /// Output transformer roll off.
     bandwidth: BandLimit,
-    /// Saturation hardness.
-    k: f64,
-    /// Operating point offset, the source of the second harmonic.
-    bias: f64,
-    /// Small signal gain of the shaper, divided back out.
+    /// How much the signal is raised going in: the drive control, as a gain.
+    gain: f64,
+    /// The shaper's output at rest, taken off so silence stays silent.
+    rest: f64,
+    /// The shaper's small signal gain, divided back out, so that with no drive
+    /// a quiet signal comes out at the level it went in.
     norm: f64,
 }
 
 impl TubeStage {
     pub fn new(sample_rate: f64) -> Self {
+        let rest = (HARDNESS * BIAS).tanh();
         let mut stage = Self {
             coupling: OnePole::default(),
             bandwidth: BandLimit::default(),
-            k: 0.4,
-            bias: BIAS,
-            norm: 1.0,
+            gain: 1.0,
+            rest,
+            // d/dx of the shaper at x = 0.
+            norm: HARDNESS * (1.0 - rest * rest),
         };
         stage.set_sample_rate(sample_rate);
-        stage.set_drive(0.0);
         stage
     }
 
@@ -128,22 +137,18 @@ impl TubeStage {
         self.bandwidth.set_cutoff(BANDWIDTH_HZ, sample_rate);
     }
 
-    /// `drive` runs from 0 (nearly clean) to 1 (obviously coloured).
-    pub fn set_drive(&mut self, drive: f64) {
-        let drive = drive.clamp(0.0, 1.0);
-        self.k = 0.4 + 5.6 * drive * drive;
-        self.bias = BIAS * (0.3 + 0.7 * drive);
-        // d/dx of the shaper at x = 0, so the small signal gain stays at unity
-        // no matter where the drive control sits.
-        let kb = (self.k * self.bias).tanh();
-        self.norm = self.k * (1.0 - kb * kb);
+    /// How far the level into the stage is raised, in decibels. The level out
+    /// rises with it, less whatever the stage squashes.
+    pub fn set_drive(&mut self, db: f64) {
+        if db.is_finite() {
+            self.gain = 10f64.powf(db / 20.0);
+        }
     }
 
     #[inline]
     pub fn process(&mut self, x: f64) -> f64 {
-        let x = self.coupling.highpass(x);
-        let kb = (self.k * self.bias).tanh();
-        let y = ((self.k * (x + self.bias)).tanh() - kb) / self.norm;
+        let x = self.coupling.highpass(x) * self.gain;
+        let y = ((HARDNESS * (x + BIAS)).tanh() - self.rest) / self.norm;
         self.bandwidth.process(y)
     }
 
@@ -160,5 +165,12 @@ const BANDWIDTH_HZ: f64 = 60e3;
 /// Where the band limit is made to agree with the analog filter exactly: the
 /// top of the audio band, where the difference would show first.
 const MATCHED_HZ: f64 = 20e3;
-/// Maximum operating point offset.
+/// How hard the stage bends. With no drive, a sine at digital full scale loses
+/// a third of a decibel to it and comes out with 1.3 % of third harmonic and
+/// 0.9 % of second, while one at -18 dBFS, where the unit's +4 dBu operating
+/// level usually sits, comes out with 0.12 % and 0.02 %: clean where it is run,
+/// and out of headroom where the digital headroom ends, as the hardware is.
+const HARDNESS: f64 = 0.4;
+/// Operating point offset, the source of the second harmonic: the push-pull
+/// stage's imbalance.
 const BIAS: f64 = 0.12;

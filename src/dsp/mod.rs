@@ -197,7 +197,7 @@ impl Channel {
         }
     }
 
-    /// The amplifier's drive, `0.0..=1.0`.
+    /// How far the level into the amplifier is raised, in decibels.
     pub fn set_drive(&mut self, drive: f64) {
         self.drive = drive;
         for path in self.running() {
