@@ -136,10 +136,13 @@ jobs:
           echo "architectures: $archs"
           [[ "$archs" == *x86_64* && "$archs" == *arm64* ]]
 
+          # grep reads to the end rather than stopping at the first match
+          # (-q): the writer would be left on a closed pipe, and with
+          # pipefail its failure to flush fails the step.
           nm -gU "$binary" | grep -E '(_)?NiceAu2Factory$'
           nm -gU "$binary" | grep -E '(_)?nice_au2_register_plugin_entry$'
           nm -gU "$binary" | grep -E '(_)?nice_au2_metadata$'
-          strings "$binary" | grep -q NiceAu2CocoaViewFactory
+          strings "$binary" | grep NiceAu2CocoaViewFactory >/dev/null
 
           codesign --verify --deep --strict --verbose=2 "$component"
 
@@ -175,7 +178,7 @@ jobs:
         run: |
           LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
             -s '-screen 0 2880x1800x24 +extension GLX +render' \
-            timeout 45s python3 tools/linux_gui_smoke.py "target/bundled/$PLUGIN.clap"
+            timeout 120s python3 tools/linux_gui_smoke.py "target/bundled/$PLUGIN.clap"
 
       - name: Stage the archive contents
         run: |

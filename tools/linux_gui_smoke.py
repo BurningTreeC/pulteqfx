@@ -210,6 +210,34 @@ def main():
             sync(display, 0)
             pump(0.08)
 
+    def picture():
+        """A coarse sample of everything the editor shows, for telling that
+        something changed. The panel is still with no audio arriving."""
+        child = child_window()
+        width, height = dimensions()
+        image = xfn("XGetImage", P, P, C.c_ulong, C.c_int, C.c_int, U, U, C.c_ulong, C.c_int)(display, child, 0, 0, width, height, C.c_ulong(-1), 2)
+        assert image, "Child is not viewable"
+        pixel = xfn("XGetPixel", C.c_ulong, P, C.c_int, C.c_int)
+        try:
+            return tuple(pixel(image, px, py) & 0xffffff for py in range(0, height, 12) for px in range(0, width, 12))
+        finally:
+            xfn("XDestroyImage", C.c_int, P)(image)
+
+    def wait_until(done, what, seconds=20.0):
+        deadline = time.monotonic() + seconds
+        while not done():
+            assert time.monotonic() < deadline, f"Gave up waiting for {what}"
+            pump(0.1)
+
+    def click_and_wait(px, py, what):
+        # Under Xvfb's software OpenGL a frame can take most of a second, and
+        # events wait for the next one. Clicking again before the last click
+        # has been drawn sends the press to whatever was there before, so each
+        # click waits until the window shows that it landed.
+        before = picture()
+        click(px, py)
+        wait_until(lambda: picture() != before, f"the editor to answer a click on {what}")
+
     reparent = xfn("XReparentWindow", C.c_int, P, C.c_ulong, C.c_ulong, C.c_int, C.c_int)
     hidden = create(display, root, 0, 0, *DEFAULT, 0, 0, 0)
     for cycle in range(2):
@@ -248,10 +276,14 @@ def main():
             # Zoom through the panel's own menu, as a person would: the gear,
             # the size button in the settings card, then 150%. Positions are
             # panel pixels, which at 100% are window pixels over the base.
-            for px, py in [(1140, 17), (1083, 88), (1083, 263)]:
-                click(round(px * BASE), round(py * BASE))
+            for px, py, what in [
+                (1140, 17, "the gear"),
+                (1083, 88, "the size button"),
+            ]:
+                click_and_wait(round(px * BASE), round(py * BASE), what)
+            click(round(1083 * BASE), round(263 * BASE))
+            wait_until(lambda: dimensions() == ZOOMED, f"150% to reach {ZOOMED}, at {dimensions()}")
             pump()
-            assert dimensions() == ZOOMED, f"150% asked the host for {dimensions()}"
             capture("zoomed")
         fn(gui.destroy, None, P)(plugin_ptr)
     fn(plugin.destroy, None, P)(plugin_ptr)

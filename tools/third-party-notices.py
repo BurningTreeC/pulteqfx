@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -121,6 +122,29 @@ def read(path):
         return None
 
 
+def published_files(package):
+    """The files a crates.io package was published with, or None for any other.
+
+    A build script is free to write into its own source directory, and some
+    do: skia-bindings downloads Skia's whole source tree next to itself when it
+    builds. A licence file that arrives that way says what has been built on
+    the machine running this, not what the crate is, and it made the notices
+    differ between this machine and CI. So for a registry crate only what is in
+    its published archive, which cargo keeps beside the unpacked source,
+    counts. Path and git packages are what is on disk.
+    """
+    if not (package.get("source") or "").startswith("registry+"):
+        return None
+    source = Path(package["manifest_path"]).parent
+    registry = source.parent.parent.parent
+    archive = registry / "cache" / source.parent.name / f"{source.name}.crate"
+    if not archive.is_file():
+        sys.exit(f"{archive} is missing; `cargo fetch` puts it back")
+    prefix = f"{source.name}/"
+    with tarfile.open(archive) as tar:
+        return {name[len(prefix):] for name in tar.getnames() if name.startswith(prefix)}
+
+
 def licence_texts(package):
     """The licence files a crate ships, as {relative path: text}.
 
@@ -132,12 +156,15 @@ def licence_texts(package):
     texts = {}
     if not source.is_dir():
         return texts
+    published = published_files(package)
 
     for path in sorted(source.rglob("*")):
         if path.is_dir() or not LICENCE_FILES.match(path.name):
             continue
         relative = path.relative_to(source)
         if len(relative.parts) > 3:
+            continue
+        if published is not None and relative.as_posix() not in published:
             continue
         # A subdirectory with its own Cargo.toml is a different package, and
         # cargo lists it separately if we actually depend on it. Its licence is

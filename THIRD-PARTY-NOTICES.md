@@ -355,7 +355,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - **simd-adler32** 0.3.10 <https://github.com/mcountryman/simd-adler32>
   - Copyright (c) [2021] [Marvin Countryman]
 - **skia-bindings** 0.99.0 <https://github.com/rust-skia/rust-skia>
-  - Copyright (c) 2011 Google Inc. All rights reserved
 - **skia-safe** 0.99.0 <https://github.com/rust-skia/rust-skia>
 - **skia-svg-macros** 0.1.0 <https://github.com/rust-skia/rust-skia>
 - **slab** 0.4.12 <https://github.com/tokio-rs/slab>
