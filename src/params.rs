@@ -4,9 +4,9 @@
 //! non-linear relationship between knob position and decibels falling out of
 //! the circuit rather than being dialled in by hand.
 
-use nih_plug::prelude::*;
-use nih_plug_vizia::ViziaState;
+use nice_plug::prelude::*;
 use std::sync::{Arc, Mutex};
+use vizia_plug::ViziaState;
 
 use crate::dsp::Controls;
 use crate::editor;

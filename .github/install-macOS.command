@@ -10,6 +10,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 readonly VENDOR="BurningTreeC"
 clap_dir="$HOME/Library/Audio/Plug-Ins/CLAP/$VENDOR"
 vst3_dir="$HOME/Library/Audio/Plug-Ins/VST3/$VENDOR"
+# Audio Units are not looked for in subfolders, so the component goes in the
+# Components folder itself.
+au_dir="$HOME/Library/Audio/Plug-Ins/Components"
 
 install_bundle() {
     local bundle="$1" dest="$2"
@@ -24,6 +27,11 @@ install_bundle() {
 
 install_bundle "PultEQFx.clap" "$clap_dir"
 install_bundle "PultEQFx.vst3" "$vst3_dir"
+install_bundle "PultEQFx.component" "$au_dir"
+
+# Make macOS forget what it cached about Audio Units, so a replaced component
+# is seen as new. The service starts again when a host next asks for it.
+killall -9 AudioComponentRegistrar 2>/dev/null || true
 
 echo
 echo "Done. Rescan plugins in your DAW."

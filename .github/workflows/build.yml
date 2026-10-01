@@ -26,16 +26,21 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
+          # Skia, which vizia draws with, finds fonts through fontconfig.
           sudo apt-get install -y libasound2-dev libgl-dev libjack-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
-            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libegl1-mesa-dev libwayland-dev libfontconfig1-dev libxkbcommon-x11-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      # The vendored baseview is not a workspace member, so it keeps
-      # upstream's formatting.
-      - run: cargo fmt --all --check
+      # Named packages rather than --all, which also formats local path
+      # dependencies and so would reach into the vendored vizia and
+      # vizia_plug. Those, like baseview, keep upstream's formatting and stay
+      # byte for byte what GainStageFx vendors. The AU bridge is a member and
+      # is held to this one.
+      - run: cargo fmt --check -p pulteqfx -p assetgen -p installer -p xtask -p nice-plug-au2
       - run: cargo test --release
       # --workspace so the installer that ships to users is linted too.
       - run: cargo clippy --release --workspace --all-targets -- -D warnings
@@ -61,9 +66,12 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
+          # Skia, which vizia draws with, finds fonts through fontconfig.
           sudo apt-get install -y libasound2-dev libgl-dev libjack-dev \
             libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
-            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libegl1-mesa-dev libwayland-dev libfontconfig1-dev libxkbcommon-x11-dev \
+            xvfb libgl1-mesa-dri
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -76,7 +84,7 @@ jobs:
 
       - name: Test the Windows window backend
         if: startsWith(matrix.os, 'windows')
-        run: cargo test --manifest-path vendor/baseview/Cargo.toml --features opengl --lib -- --test-threads=1
+        run: cargo test --manifest-path vendor/baseview/Cargo.toml --features opengl,tracing --lib -- --test-threads=1
 
       - name: Build the installer
         # A small dependency free program that copies the bundles into place,
@@ -93,9 +101,81 @@ jobs:
             # needs no Apple account, and an arm64 binary will not load at all
             # without at least an ad-hoc signature.
             cargo xtask bundle-universal "$PACKAGE" --release
+            # The same universal binary also exports the AUv2 entry points
+            # (nice-plug-au2); this wraps it in a .component and signs it.
+            bash tools/package_au2.sh "$PLUGIN"
           else
             cargo xtask bundle "$PACKAGE" --release
           fi
+
+      # Not only that a .component exists: that its plist names the codes
+      # src/lib.rs exports, that both architectures are in it, that the AU
+      # entry points and the Cocoa view factory were linked, and that the
+      # signature holds.
+      - name: Verify the Audio Unit
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+          component="target/bundled/$PLUGIN.component"
+          plist="$component/Contents/Info.plist"
+          binary="$component/Contents/MacOS/$PLUGIN"
+          test -f "$plist"
+          test -x "$binary"
+          plutil -lint "$plist"
+
+          field() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
+          [[ "$(field CFBundleExecutable)" == "$PLUGIN" ]]
+          [[ "$(field CFBundleIdentifier)" == "com.burningtreec.pulteqfx.au" ]]
+          [[ "$(field CFBundlePackageType)" == "BNDL" ]]
+          [[ "$(field AudioComponents:0:type)" == "aufx" ]]
+          [[ "$(field AudioComponents:0:subtype)" == "PEQf" ]]
+          [[ "$(field AudioComponents:0:manufacturer)" == "BrTC" ]]
+          [[ "$(field AudioComponents:0:factoryFunction)" == "NiceAu2Factory" ]]
+
+          archs="$(lipo -archs "$binary")"
+          echo "architectures: $archs"
+          [[ "$archs" == *x86_64* && "$archs" == *arm64* ]]
+
+          nm -gU "$binary" | grep -E '(_)?NiceAu2Factory$'
+          nm -gU "$binary" | grep -E '(_)?nice_au2_register_plugin_entry$'
+          nm -gU "$binary" | grep -E '(_)?nice_au2_metadata$'
+          strings "$binary" | grep -q NiceAu2CocoaViewFactory
+
+          codesign --verify --deep --strict --verbose=2 "$component"
+
+      # macOS's own validator, which is what Logic runs before it will list a
+      # plugin. It only finds components installed where AU hosts look.
+      - name: Validate the Audio Unit with auval
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          set -uo pipefail
+          au_dir="$HOME/Library/Audio/Plug-Ins/Components"
+          mkdir -p "$au_dir"
+          rm -rf "$au_dir/$PLUGIN.component"
+          cp -R "target/bundled/$PLUGIN.component" "$au_dir/"
+          xattr -dr com.apple.quarantine "$au_dir/$PLUGIN.component" 2>/dev/null || true
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -a | grep -E 'BrTC|PultEQFx' || true
+
+          auval -v aufx PEQf BrTC 2>&1 | tee "$RUNNER_TEMP/auval.log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::group::auval errors"
+            grep -n -B 8 -A 15 -E 'ERROR:|FAILED' "$RUNNER_TEMP/auval.log" || true
+            echo "::endgroup::"
+          fi
+          exit "$status"
+
+      # The real CLAP binary, loaded through its C ABI and embedded in an X11
+      # window the way a host does it: it has to paint, survive being hidden
+      # and shown, zoom through its own menu, and reopen at that size.
+      - name: Test the Linux CLAP editor
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
+            -s '-screen 0 2880x1800x24 +extension GLX +render' \
+            timeout 45s python3 tools/linux_gui_smoke.py "target/bundled/$PLUGIN.clap"
 
       - name: Stage the archive contents
         run: |
@@ -114,6 +194,10 @@ jobs:
               chmod +x "$staged/install.sh"
               ;;
             macOS)
+              # All three formats, or the archive is not worth uploading.
+              test -d "$staged/$PLUGIN.clap"
+              test -d "$staged/$PLUGIN.vst3"
+              test -d "$staged/$PLUGIN.component"
               cp .github/install-macOS.command "$staged/Install.command"
               chmod +x "$staged/Install.command"
               ;;
@@ -142,6 +226,14 @@ jobs:
         with:
           path: artifacts
 
+      - name: Check every platform is there
+        run: |
+          set -euo pipefail
+          for name in linux macos-universal windows; do
+            test -d "artifacts/$PLUGIN-$name"
+          done
+          test -d "artifacts/$PLUGIN-macos-universal/$PLUGIN.component"
+
       - name: Zip each platform
         run: |
           mkdir -p release
@@ -167,8 +259,10 @@ jobs:
           `Install.command` on macOS. `README.txt` covers installing by hand.
           Every archive also contains `LICENSE` and `THIRD-PARTY-NOTICES.md`.
 
-          **macOS:** the plugins are ad-hoc signed but not notarized, so macOS
-          quarantines them. `Install.command` in the archive puts them in place
-          and clears the quarantine flag; `README.txt` has the manual commands
-          if you would rather do it yourself.
+          **macOS:** universal (Apple Silicon and Intel) CLAP, VST3 and Audio
+          Unit v2 (`.component`) plugins. They are ad-hoc signed but not
+          notarized, so macOS quarantines them. `Install.command` in the
+          archive puts them in place and clears the quarantine flag;
+          `README.txt` has the manual commands if you would rather do it
+          yourself.
           NOTES

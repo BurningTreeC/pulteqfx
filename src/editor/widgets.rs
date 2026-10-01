@@ -1,12 +1,13 @@
 //! The panel's controls: knobs, rotary switches, the positions engraved round
 //! them, and the pilot lamp.
 
-use nih_plug::prelude::{Param, ParamPtr};
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
-use nih_plug_vizia::widgets::{util::ModifiersExt, RawParamEvent};
+use nice_plug::prelude::{Param, ParamPtr};
+use vizia_plug::vizia::prelude::*;
+use vizia_plug::widgets::param_base::ParamWidgetBase;
+use vizia_plug::widgets::{util::ModifiersExt, RawParamEvent};
 
+use super::paint as vg;
+use super::paint::PanelCanvas;
 use super::sprites::{self, Placement, Sprite};
 use super::style::*;
 
@@ -16,6 +17,48 @@ const DRAG_RANGE: f32 = 260.0;
 const FINE: f32 = 0.15;
 /// Pixels a press may wander and still count as a click rather than a drag.
 const CLICK_SLOP: f32 = 3.0;
+
+/// Where a drag has taken the knob, kept here rather than read back from the
+/// parameter on every movement.
+///
+/// nice-plug's CLAP wrapper does not change a parameter when the editor sets
+/// it: it queues the change for the host and applies it at the end of the next
+/// processing cycle. A drag that added each movement to the value read back
+/// from the parameter was adding it to a value one or more movements old, so
+/// a slow drag lost most of its travel. The drag keeps its own position and
+/// the parameter follows it.
+#[derive(Default)]
+struct DragPosition {
+    normalized: f32,
+    y: f32,
+}
+
+impl DragPosition {
+    fn start(&mut self, normalized: f32, y: f32) {
+        self.normalized = normalized;
+        self.y = y;
+    }
+
+    fn move_to(&mut self, y: f32, scale_factor: f32, fine: bool) -> f32 {
+        let speed = if fine { FINE } else { 1.0 };
+        let delta = (self.y - y) / (DRAG_RANGE * scale_factor) * speed;
+        self.y = y;
+        self.normalized = (self.normalized + delta).clamp(0.0, 1.0);
+        self.normalized
+    }
+}
+
+/// Repaints a control whenever its parameter's value moves, whoever moved it.
+///
+/// Called from inside the control's own build closure, where the current
+/// entity is the control. The binding cannot ask for its own entity to be
+/// drawn: bindings take no space and the draw system skips them, so the
+/// request has to name the control.
+pub(super) fn redraw_on_change(cx: &mut Context, param: ParamWidgetBase) {
+    let owner = cx.current();
+    let value = param.modulated_signal(cx);
+    Binding::new(cx, value, move |cx| cx.needs_redraw(owner));
+}
 
 // ---------------------------------------------------------------------------
 // Rotary knob
@@ -27,7 +70,7 @@ pub struct Knob {
     param: ParamWidgetBase,
     radius: f32,
     dragging: bool,
-    last_y: f32,
+    drag_position: DragPosition,
     face: Sprite,
 }
 
@@ -39,34 +82,36 @@ impl Knob {
         radius: f32,
     ) -> Handle<'_, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
+        let param = ParamWidgetBase::new(cx, params_to_param(&params.get()));
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param,
             radius,
             dragging: false,
-            last_y: 0.0,
+            drag_position: DragPosition::default(),
             face: Sprite::new(),
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                // Repaint whenever the host or another editor moves the value.
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+        // Repaint whenever the host or another editor moves the value.
+        .build(cx, move |cx| redraw_on_change(cx, param))
         .width(Pixels(radius * 2.0))
         .height(Pixels(radius * 2.0))
     }
 
-    fn nudge(&self, cx: &mut EventContext, delta: f32) {
-        let current = self.param.unmodulated_normalized_value();
-        self.param
-            .set_normalized_value(cx, (current + delta).clamp(0.0, 1.0));
+    fn nudge(&mut self, cx: &mut EventContext, delta: f32) {
+        let current = if self.dragging {
+            self.drag_position.normalized
+        } else {
+            self.param.unmodulated_normalized_value()
+        };
+        let value = (current + delta).clamp(0.0, 1.0);
+        if self.dragging {
+            self.drag_position.normalized = value;
+        }
+        self.param.set_normalized_value(cx, value);
     }
 
     /// Ends a drag: releases the mouse and closes the gesture with the host.
@@ -89,10 +134,10 @@ impl View for Knob {
         Some("pulteqfx-knob")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let bounds = cx.bounds();
         let r = self.radius * cx.scale_factor();
-        let (mx, my) = (bounds.x + bounds.w / 2.0, bounds.y + bounds.h / 2.0);
+        let (mx, my) = bounds.center();
 
         // Pick the frame rendered at this angle rather than turning one image,
         // which would carry the lighting round with the knob.
@@ -181,7 +226,10 @@ impl View for Knob {
                     // thing anybody tries.
                     self.finish(cx);
                     self.dragging = true;
-                    self.last_y = cx.mouse().cursory;
+                    self.drag_position.start(
+                        self.param.unmodulated_normalized_value(),
+                        cx.mouse().cursor_y,
+                    );
                     cx.capture();
                     cx.focus();
                     cx.set_active(true);
@@ -220,18 +268,24 @@ impl View for Knob {
                         self.finish(cx);
                         return;
                     }
-                    let speed = if cx.modifiers().shift() { FINE } else { 1.0 };
-                    let delta = (self.last_y - *y) / (DRAG_RANGE * cx.scale_factor()) * speed;
-                    self.last_y = *y;
-                    self.nudge(cx, delta);
+                    let normalized =
+                        self.drag_position
+                            .move_to(*y, cx.scale_factor(), cx.modifiers().shift());
+                    self.param.set_normalized_value(cx, normalized);
                     cx.needs_redraw();
                 }
             }
             WindowEvent::MouseScroll(_, y) => {
                 let step = if cx.modifiers().shift() { 0.005 } else { 0.02 };
-                self.param.begin_set_parameter(cx);
+                // Mid-drag the wheel adds to the drag, inside its gesture,
+                // rather than opening a second one inside the first.
+                if !self.dragging {
+                    self.param.begin_set_parameter(cx);
+                }
                 self.nudge(cx, y * step);
-                self.param.end_set_parameter(cx);
+                if !self.dragging {
+                    self.param.end_set_parameter(cx);
+                }
                 cx.needs_redraw();
                 meta.consume();
             }
@@ -267,10 +321,16 @@ pub struct Selector {
     wandered: bool,
     /// Fractional position carried between events so a slow drag still moves.
     travel: f32,
+    /// The position the drag has reached. Kept here for the reason the knob
+    /// keeps its `DragPosition`: the parameter only catches up once the host
+    /// has had it, and two detents dragged through in one cycle would
+    /// otherwise both be counted from the first.
+    drag_index: isize,
     face: Sprite,
 }
 
 impl Selector {
+    #[allow(clippy::too_many_arguments)]
     pub fn new<L, Params, P, FMap>(
         cx: &mut Context,
         params: L,
@@ -281,13 +341,14 @@ impl Selector {
         reversed: bool,
     ) -> Handle<'_, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
+        let param = ParamWidgetBase::new(cx, params_to_param(&params.get()));
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param,
             radius,
             positions,
             pointer,
@@ -297,15 +358,10 @@ impl Selector {
             pressed_y: 0.0,
             wandered: false,
             travel: 0.0,
+            drag_index: 0,
             face: Sprite::new(),
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+        .build(cx, move |cx| redraw_on_change(cx, param))
         .width(Pixels(radius * 2.0))
         .height(Pixels(radius * 2.0))
     }
@@ -326,13 +382,16 @@ impl Selector {
         cx.set_active(false);
     }
 
-    fn select(&self, cx: &mut EventContext, index: isize) {
+    /// Sets the switch to a position, clamped to the ones it has, and says
+    /// which position that was.
+    fn select(&self, cx: &mut EventContext, index: isize) -> isize {
         let n = self.positions.max(1) as isize;
         let index = index.clamp(0, n - 1);
         let normalized = index as f32 / (n - 1).max(1) as f32;
         self.param.begin_set_parameter(cx);
         self.param.set_normalized_value(cx, normalized);
         self.param.end_set_parameter(cx);
+        index
     }
 }
 
@@ -341,10 +400,10 @@ impl View for Selector {
         Some("pulteqfx-selector")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let bounds = cx.bounds();
         let r = self.radius * cx.scale_factor();
-        let (mx, my) = (bounds.x + bounds.w / 2.0, bounds.y + bounds.h / 2.0);
+        let (mx, my) = bounds.center();
 
         let shown = if self.reversed {
             self.positions.saturating_sub(1) - self.index()
@@ -388,10 +447,11 @@ impl View for Selector {
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
                 self.release_drag(cx);
                 self.dragging = true;
-                self.last_y = cx.mouse().cursory;
+                self.last_y = cx.mouse().cursor_y;
                 self.pressed_y = self.last_y;
                 self.wandered = false;
                 self.travel = 0.0;
+                self.drag_index = self.index() as isize;
                 cx.capture();
                 cx.focus();
                 cx.set_active(true);
@@ -403,7 +463,7 @@ impl View for Selector {
                     // drag has moved it already, and a switch with more
                     // positions is set by clicking its engraving instead.
                     if !self.wandered && self.positions == 2 {
-                        self.select(cx, 1 - self.index() as isize);
+                        self.select(cx, 1 - self.drag_index);
                         cx.needs_redraw();
                     }
                     self.release_drag(cx);
@@ -436,7 +496,7 @@ impl View for Selector {
                         // Dragging up has to move the pointer the way the
                         // panel is engraved, not the way the parameter counts.
                         let steps = if self.reversed { -steps } else { steps };
-                        self.select(cx, self.index() as isize + steps as isize);
+                        self.drag_index = self.select(cx, self.drag_index + steps as isize);
                         cx.needs_redraw();
                     }
                 }
@@ -519,23 +579,18 @@ impl Lamp {
         params_to_param: FMap,
     ) -> Handle<'_, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
+        let param = ParamWidgetBase::new(cx, params_to_param(&params.get()));
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param,
             lit: Sprite::new(),
             dark: Sprite::new(),
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+        .build(cx, move |cx| redraw_on_change(cx, param))
         .width(Pixels(28.0))
         .height(Pixels(28.0))
     }
@@ -556,10 +611,10 @@ impl View for Lamp {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let bounds = cx.bounds();
-        let (mx, my) = (bounds.x + bounds.w / 2.0, bounds.y + bounds.h / 2.0);
-        let r = bounds.w.min(bounds.h) / 2.0;
+        let (mx, my) = bounds.center();
+        let r = bounds.width().min(bounds.height()) / 2.0;
         let lit = self.param.modulated_normalized_value() > 0.5;
         let body = r * sprites::LAMP_DRAW / 2.0;
 

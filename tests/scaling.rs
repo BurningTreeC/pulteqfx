@@ -5,9 +5,9 @@
 //! in the menu -- both worked -- but in the figure never reaching the state
 //! that gets written down.
 
-use nih_plug::params::Params;
+use nice_plug::params::Params;
 use pulteqfx::editor::settings::SCALES;
-use pulteqfx::editor::{default_state, remember_scale};
+use pulteqfx::editor::{default_state, remember_scale, BASE_SCALE};
 use pulteqfx::params::PultEqFxParams;
 
 fn fresh() -> PultEqFxParams {
@@ -63,123 +63,108 @@ fn the_size_survives_a_session() {
     }
 }
 
-/// A plugin whose size has never been touched still opens at full size.
+/// A plugin whose size has never been touched opens at 100 %, which is drawn
+/// at the 1.5 base: the menu's percentage and the rendering scale are two
+/// different numbers, as they are in GainStageFx.
 #[test]
-fn an_untouched_panel_opens_at_full_size() {
+fn an_untouched_panel_opens_at_100_percent_with_a_1_5_base() {
     let params = fresh();
     let restored = fresh();
     restored.deserialize_fields(&params.serialize_fields());
+    assert_eq!(BASE_SCALE, 1.5);
     assert_eq!(restored.editor_state.user_scale_factor(), 1.0);
+    assert_eq!(restored.editor_state.rendering_scale_factor(), 1.5);
+    assert_eq!(restored.editor_state.inner_logical_size(), (1160, 356));
+    assert_eq!(restored.editor_state.scaled_logical_size(), (1740, 534));
+}
+
+/// Every size in the menu is a percentage of the base, not of the panel's own
+/// pixels.
+#[test]
+fn the_menu_sizes_are_relative_to_the_base() {
+    let state = default_state();
+    for (zoom, rendering, size) in [
+        (0.5, 0.75, (870, 267)),
+        (1.0, 1.5, (1740, 534)),
+        (1.5, 2.25, (2610, 801)),
+        (2.0, 3.0, (3480, 1068)),
+    ] {
+        assert!(SCALES.contains(&zoom), "{zoom} is not in the menu");
+        remember_scale(&state, zoom);
+        assert_eq!(state.user_scale_factor(), zoom);
+        assert_eq!(state.rendering_scale_factor(), rendering);
+        assert_eq!(state.scaled_logical_size(), size, "at {zoom}");
+    }
 }
 
 /// Choosing a size has to *ask the host to resize the window*, which is a
-/// different thing from storing the number and was the half that was missing.
+/// different thing from storing the number and was once the half missing.
 ///
-/// Only `GuiContext::request_resize` moves a plugin window. nih-plug calls it
-/// from one place -- its `WindowModel`, on a `GeometryChanged` -- behind a
-/// guard that returns early when the unscaled size and the stored scale are
-/// both unchanged. The panel's size function is a constant, so that guard
-/// rested entirely on the scale, and the scale had already been written by
-/// `remember_scale` before the event arrived. Both halves equal, early return,
-/// no request, and a panel drawn at the new size inside a window still at the
-/// old one.
+/// Under nih-plug the editor stored the scale and then called
+/// `GuiContext::request_resize`, and had to undo the store by hand when the
+/// host refused. Now the menu asks vizia's baseview backend for the new size
+/// (`WindowEvent::SetUserScale`), the backend asks the host through
+/// `request_user_scale`, and the scale is only adopted -- drawn at, shown on
+/// the button, written into the session -- once the window reports the size
+/// it actually reached (`resolve_user_scale`, then `UserScaleChanged`). A
+/// refusal reports the old size, so nothing has to be put back.
 mod resize {
-    use super::*;
-    use nih_plug::prelude::{GuiContext, ParamPtr, PluginApi, PluginState};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use vizia_plug::vizia::{request_user_scale, resolve_user_scale};
 
-    struct CountingHost {
-        resizes: AtomicUsize,
-        state: Arc<nih_plug_vizia::ViziaState>,
-        observed: Mutex<Vec<f64>>,
-        accepts: bool,
-    }
+    /// The panel's own size, which every zoom is a multiple of.
+    const PANEL: (u32, u32) = (1160, 356);
 
-    impl CountingHost {
-        fn new(state: Arc<nih_plug_vizia::ViziaState>, accepts: bool) -> Self {
-            Self {
-                state,
-                accepts,
-                resizes: AtomicUsize::new(0),
-                observed: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    impl GuiContext for CountingHost {
-        fn plugin_api(&self) -> PluginApi {
-            PluginApi::Clap
-        }
-        fn request_resize(&self) -> bool {
-            self.resizes.fetch_add(1, Ordering::Relaxed);
-            self.observed
-                .lock()
-                .unwrap()
-                .push(self.state.user_scale_factor());
-            self.accepts
-        }
-        unsafe fn raw_begin_set_parameter(&self, _: ParamPtr) {}
-        unsafe fn raw_set_parameter_normalized(&self, _: ParamPtr, _: f32) {}
-        unsafe fn raw_end_set_parameter(&self, _: ParamPtr) {}
-        fn get_state(&self) -> PluginState {
-            unimplemented!("the panel never asks the host for its state")
-        }
-        fn set_state(&self, _: PluginState) {
-            unimplemented!("the panel never hands the host a state")
-        }
-    }
+    // The backend's zoom is the rendering scale, the base times the menu's
+    // percentage: 100 % is 1.5, 150 % is 2.25. `UiState` multiplies by the
+    // base on the way out and divides on the way back.
 
     #[test]
-    fn choosing_a_size_asks_the_host_to_resize_the_window() {
-        let state = default_state();
-        let host = CountingHost::new(state.clone(), true);
-
-        assert!(pulteqfx::editor::apply_scale(&state, &host, 1.5));
-        assert_eq!(*host.observed.lock().unwrap(), [1.5]);
-
+    fn choosing_a_size_asks_the_host_for_that_size() {
+        let mut asked = None;
+        let accepted = request_user_scale(1.5, 2.25, PANEL, |size| {
+            asked = Some((size.width, size.height));
+            true
+        });
+        assert_eq!(accepted, Some(2.25));
         assert_eq!(
-            host.resizes.load(Ordering::Relaxed),
-            1,
-            "the size was stored but the host was never asked for a window to \
-             put it in, which leaves the panel drawn larger than its window"
-        );
-        assert_eq!(
-            state.user_scale_factor(),
-            1.5,
-            "the host was asked to resize before the size it would read was set"
+            asked,
+            Some((2610.0, 801.0)),
+            "the host was asked for a window the panel will not fit"
         );
     }
 
     #[test]
-    fn rejected_resize_restores_the_size_saved_with_the_session() {
-        let params = fresh();
-        remember_scale(&params.editor_state, 1.25);
-        let previous_size = params.editor_state.scaled_logical_size();
-        let host = CountingHost::new(params.editor_state.clone(), false);
-
-        assert!(!pulteqfx::editor::apply_scale(
-            &params.editor_state,
-            &host,
-            2.0
-        ));
-        assert_eq!(*host.observed.lock().unwrap(), [2.0]);
-        assert_eq!(params.editor_state.scaled_logical_size(), previous_size);
-        let restored = fresh();
-        restored.deserialize_fields(&params.serialize_fields());
-        assert_eq!(restored.editor_state.user_scale_factor(), 1.25);
+    fn a_refused_resize_keeps_the_size_the_window_has() {
+        assert_eq!(request_user_scale(1.875, 3.0, PANEL, |_| false), None);
+        // The window stays at 125 % and says so; that is the size kept.
+        assert_eq!(resolve_user_scale((2175.0, 667.5), PANEL, 3.0), 1.875);
     }
 
     #[test]
-    fn repeated_zoom_changes_report_each_new_size_without_redundant_requests() {
-        let state = default_state();
-        let host = CountingHost::new(state.clone(), true);
-        for scale in [0.5, 2.0, 0.75, 1.5, 1.0] {
-            assert!(pulteqfx::editor::apply_scale(&state, &host, scale));
-            assert!(pulteqfx::editor::apply_scale(&state, &host, scale));
-            assert_eq!(state.user_scale_factor(), scale);
+    fn a_resize_that_lands_keeps_the_size_asked_for() {
+        assert_eq!(resolve_user_scale((2610.0, 801.0), PANEL, 2.25), 2.25);
+        // 85 %, rounded to whole pixels on the way, which must not read as a
+        // refusal.
+        assert_eq!(resolve_user_scale((1479.0, 453.9), PANEL, 1.275), 1.275);
+    }
+
+    #[test]
+    fn repeated_zoom_changes_ask_once_for_each_new_size() {
+        let mut current = 1.5;
+        let mut calls = 0;
+        for zoom in [0.5, 2.0, 0.75, 1.5, 1.0] {
+            let requested = zoom * 1.5;
+            current = request_user_scale(current, requested, PANEL, |_| {
+                calls += 1;
+                true
+            })
+            .unwrap();
+            assert_eq!(
+                request_user_scale(current, requested, PANEL, |_| panic!("asked twice")),
+                None
+            );
         }
-        assert_eq!(*host.observed.lock().unwrap(), [0.5, 2.0, 0.75, 1.5, 1.0]);
+        assert_eq!(calls, 5);
     }
 }
 
@@ -210,8 +195,8 @@ fn the_panel_reopens_at_the_size_it_was_left_at() {
         assert_eq!(
             state.scaled_logical_size(),
             (
-                (uw as f64 * scale).round() as u32,
-                (uh as f64 * scale).round() as u32
+                (uw as f64 * scale * BASE_SCALE).round() as u32,
+                (uh as f64 * scale * BASE_SCALE).round() as u32
             ),
             "the window the host is told to make at {scale:.2} does not match \
              the scale the panel will draw at"

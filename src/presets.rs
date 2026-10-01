@@ -5,7 +5,7 @@
 //! into the user's config directory as one small JSON file each, so they can
 //! be copied around and edited by hand.
 
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ffi::OsString;

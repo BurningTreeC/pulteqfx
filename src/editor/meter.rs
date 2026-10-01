@@ -10,13 +10,14 @@
 //! The bar shows both levels at once, as a DAW's peak and RMS meters do: solid
 //! up to the RMS level, and fainter from there up to the peak.
 
-use nih_plug_vizia::assets;
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
 use std::cell::Cell;
 use std::sync::Arc;
 use std::time::Instant;
+use vizia_plug::vizia::prelude::*;
 
+use super::fonts;
+use super::paint as vg;
+use super::paint::PanelCanvas;
 use super::style::*;
 use crate::meters::{self, Meter, Meters, CHANNELS};
 
@@ -65,6 +66,13 @@ impl Which {
         match self {
             Which::Input => &meters.input,
             Which::Output => &meters.output,
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Which::Input => 0,
+            Which::Output => 1,
         }
     }
 }
@@ -200,7 +208,7 @@ impl View for LevelMeter {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let s = cx.scale_factor();
         let meter = self.which.of(&self.meters);
@@ -217,7 +225,7 @@ impl View for LevelMeter {
         // walls in shadow and its lower and right lips catching the light,
         // which is up and to the left.
         let mut well = vg::Path::new();
-        well.rounded_rect(b.x, b.y, b.w, b.h, 3.0 * s);
+        well.rounded_rect(b.x, b.y, b.width(), b.height(), 3.0 * s);
         canvas.fill_path(&well, &vg::Paint::color(rgb(0x0a0c0e)));
         canvas.fill_path(
             &well,
@@ -231,17 +239,17 @@ impl View for LevelMeter {
             ),
         );
         let mut lip = vg::Path::new();
-        lip.move_to(b.x + b.w + 0.5 * s, b.y + 3.0 * s);
-        lip.line_to(b.x + b.w + 0.5 * s, b.y + b.h + 0.5 * s);
-        lip.line_to(b.x + 3.0 * s, b.y + b.h + 0.5 * s);
+        lip.move_to(b.x + b.width() + 0.5 * s, b.y + 3.0 * s);
+        lip.line_to(b.x + b.width() + 0.5 * s, b.y + b.height() + 0.5 * s);
+        lip.line_to(b.x + 3.0 * s, b.y + b.height() + 0.5 * s);
         canvas.stroke_path(
             &lip,
             &vg::Paint::color(rgba(0xffffff, 0.16)).with_line_width(s),
         );
         let mut rim = vg::Path::new();
-        rim.move_to(b.x - 0.5 * s, b.y + b.h - 3.0 * s);
+        rim.move_to(b.x - 0.5 * s, b.y + b.height() - 3.0 * s);
         rim.line_to(b.x - 0.5 * s, b.y - 0.5 * s);
-        rim.line_to(b.x + b.w - 3.0 * s, b.y - 0.5 * s);
+        rim.line_to(b.x + b.width() - 3.0 * s, b.y - 0.5 * s);
         canvas.stroke_path(
             &rim,
             &vg::Paint::color(rgba(0x000000, 0.45)).with_line_width(s),
@@ -249,7 +257,7 @@ impl View for LevelMeter {
 
         let inset = INSET * s;
         let gap = 2.0 * s;
-        let span = b.w - 2.0 * inset;
+        let span = b.width() - 2.0 * inset;
         let bar_w = (span - gap * (channels - 1) as f32) / channels as f32;
         let top = b.y + SCALE_TOP * s;
         let height = SCALE_H * s;
@@ -323,10 +331,10 @@ impl View for LevelMeter {
 /// The PEAK figure under a meter: the highest sample on any channel since it
 /// was cleared.
 ///
-/// The labels read these through a lens on the panel's meters. vizia's
-/// baseview backend reads every bound value again on every frame, so a label
-/// follows the audio without anything having to tell it to. A timer could not
-/// have: that backend never runs vizia's timers at all.
+/// The labels show these through `Readings`, which a timer reads off the
+/// meters thirty times a second. They used to be read through a lens, which
+/// the old baseview backend re-read on every frame; vizia's signals only
+/// update a label when told to, and the audio thread cannot tell them.
 pub fn peak_figure(meters: &Meters, which: Which) -> String {
     let meter = which.of(meters);
     let held = (0..meters.channels())
@@ -345,6 +353,43 @@ pub fn rms_figure(meters: &Meters, which: Which) -> String {
     meters::readout(meters::db_power(mean_square))
 }
 
+/// What the readouts under both meters say, as last read off the meters.
+///
+/// Kept in a signal on the panel and compared before it is replaced, so a
+/// label is only laid out again when its figure has actually changed. Indexed
+/// by `Which`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Readings {
+    pub peak: [String; 2],
+    pub rms: [String; 2],
+    /// Whether anything has reached full scale since the readout was cleared,
+    /// which turns the PEAK box red.
+    pub over: [bool; 2],
+}
+
+impl Readings {
+    pub fn read(meters: &Meters) -> Self {
+        let mut readings = Self::default();
+        for which in [Which::Input, Which::Output] {
+            let meter = which.of(meters);
+            let i = which.index();
+            readings.peak[i] = peak_figure(meters, which);
+            readings.rms[i] = rms_figure(meters, which);
+            readings.over[i] = (0..meters.channels()).any(|channel| meter.held(channel) >= 1.0);
+        }
+        readings
+    }
+
+    pub fn figure(&self, which: Which, peak: bool) -> String {
+        let i = which.index();
+        if peak {
+            self.peak[i].clone()
+        } else {
+            self.rms[i].clone()
+        }
+    }
+}
+
 /// One figure under a meter, in a small dark window of its own. The peak
 /// figure turns red once anything has reached full scale, and clicking it
 /// starts it again, as clicking the meter does.
@@ -355,34 +400,35 @@ pub struct ReadoutBox {
 }
 
 impl ReadoutBox {
-    pub fn new<L>(
+    pub fn new(
         cx: &mut Context,
         meters: Arc<Meters>,
         which: Which,
         peak: bool,
-        text: L,
-    ) -> Handle<'_, Self>
-    where
-        L: Lens<Target = String>,
-    {
+        readings: Signal<Readings>,
+    ) -> Handle<'_, Self> {
         Self {
             meters,
             which,
             peak,
         }
         .build(cx, move |cx| {
-            Label::new(cx, text)
+            Label::new(cx, readings.map(move |r| r.figure(which, peak)))
                 .width(Stretch(1.0))
                 .height(Stretch(1.0))
-                .child_left(Stretch(1.0))
-                .child_right(Stretch(1.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                .alignment(Alignment::Center)
+                .text_align(TextAlign::Center)
+                .font_family(vec![FamilyOwned::Named(String::from(fonts::NOTO_SANS))])
                 .font_weight(FontWeightKeyword::Bold)
                 .font_size(10.0)
                 .color(Color::rgb(0xe6, 0xec, 0xf0))
                 .hoverable(false);
+            // The box itself goes red, which the label cannot do for it.
+            if peak {
+                let owner = cx.current();
+                let over = readings.map(move |r| r.over[which.index()]);
+                Binding::new(cx, over, move |cx| cx.needs_redraw(owner));
+            }
         })
     }
 }
@@ -408,7 +454,7 @@ impl View for ReadoutBox {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let s = cx.scale_factor();
         let meter = self.which.of(&self.meters);
@@ -416,7 +462,7 @@ impl View for ReadoutBox {
             self.peak && (0..self.meters.channels()).any(|channel| meter.held(channel) >= 1.0);
 
         let mut path = vg::Path::new();
-        path.rounded_rect(b.x, b.y, b.w, b.h, 2.5 * s);
+        path.rounded_rect(b.x, b.y, b.width(), b.height(), 2.5 * s);
         let (fill, edge) = if over {
             (rgb(0x7c1712), rgba(RED, 0.9))
         } else {

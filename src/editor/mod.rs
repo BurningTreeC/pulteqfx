@@ -12,44 +12,76 @@
 //! controls on the hardware, or the amplifier's drive and output trim beside
 //! the output meter; they are there for gain staging.
 
+mod fonts;
 pub mod meter;
+mod paint;
 mod panel;
 pub mod settings;
 mod sprites;
 pub mod style;
 mod widgets;
 
-use nih_plug::prelude::{Editor, Param, ParamPtr};
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
+use nice_plug::prelude::{FloatParam, Param, ParamPtr};
 use std::sync::Arc;
+use std::time::Duration;
+use vizia_plug::vizia::prelude::*;
+use vizia_plug::widgets::RawParamEvent;
+use vizia_plug::{create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::meters::Meters;
 use crate::params::{HighAttenFreq, HighBoostFreq, LowFreq, PultEqFxParams};
-use meter::{LevelMeter, ReadoutBox, Which};
-use nih_plug::prelude::FloatParam;
+use meter::{LevelMeter, Readings, ReadoutBox, Which};
 use panel::Faceplate;
 use settings::{Dialogs, Header, SettingsOverlay, UiState};
 use style::*;
 use widgets::{Detent, Knob, Lamp, Selector};
 
-#[derive(Lens)]
 pub struct Panel {
     pub params: Arc<PultEqFxParams>,
     pub meters: Arc<Meters>,
+    /// The parameters, set again on every parameter event so that anything
+    /// mapped from them is read again: the trims' settings, which follow the
+    /// knob, the host's automation and a preset alike.
+    ///
+    /// The old vizia re-read every bound lens on every frame. Signals only
+    /// move when they are set, and nothing reaches the GUI thread about a
+    /// parameter except `RawParamEvent`s -- the panel's own edits on their
+    /// way to the host, and `ParametersChanged` once the host has applied one.
+    parameter_signal: Signal<Arc<PultEqFxParams>>,
+    /// What the readouts under the meters say. See `start_meter_clock`.
+    readings: Signal<Readings>,
 }
 
-impl Model for Panel {}
+impl Model for Panel {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|_: &RawParamEvent, _| self.parameter_signal.set(self.params.clone()));
+    }
+}
+
+/// Physical pixels per panel pixel at 100 %, the same as GainStageFx's.
+///
+/// The size menu's percentages are of this, not of the panel's own pixels:
+/// 100 % is 1740 x 534, 200 % is 3.0 and 3480 x 1068. Only the percentage is
+/// saved with a session; the base is the plugin's, so changing it here
+/// rescales every session saved before.
+///
+/// A host's or the system's DPI suggestion is not multiplied in. That is the
+/// policy GainStageFx's port settled on, and the only one the adapter has
+/// been shown to get right: following the host's suggestion, as nih-plug did,
+/// made REAPER's repeated suggestion double the window on X11, and the size
+/// reported straight after a suggestion was the old one.
+pub const BASE_SCALE: f64 = 1.5;
 
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 1.0)
+    ViziaState::new_with_base_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), BASE_SCALE)
 }
+
 /// Updates the scale used by `Editor::size()` and saved in the host session.
-/// Vizia's drawing scale is separate and must only change after the host has
-/// accepted the resize. `PersistentField::set` copies the carrier's scale;
-/// the original state's size function and open status stay intact.
+/// Vizia's drawing scale is separate and only changes once the window has
+/// actually reached the new size. `PersistentField::set` copies the carrier's
+/// scale; the original state's size function and open status stay intact.
 pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
-    use nih_plug::params::persist::PersistentField;
+    use nice_plug::params::persist::PersistentField;
     let carrier = ViziaState::new_with_default_scale_factor(|| (0, 0), scale);
     if let Ok(carrier) = Arc::try_unwrap(carrier) {
         PersistentField::set(state, carrier);
@@ -98,27 +130,6 @@ const PEAK_READOUT_Y: f32 = 257.0;
 const RMS_CAPTION_Y: f32 = 283.0;
 const RMS_READOUT_Y: f32 = 289.0;
 
-/// Stores the requested scale before the host reads `Editor::size()`.
-/// Returns whether the UI should adopt it. A refusal restores the persisted
-/// size, so drawing and host geometry continue to agree.
-pub fn apply_scale(
-    state: &Arc<ViziaState>,
-    gui: &dyn nih_plug::prelude::GuiContext,
-    scale: f64,
-) -> bool {
-    let previous = state.user_scale_factor();
-    if scale == previous {
-        return true;
-    }
-    remember_scale(state, scale);
-    if gui.request_resize() {
-        true
-    } else {
-        remember_scale(state, previous);
-        false
-    }
-}
-
 /// Height of a label box, which is centred on its anchor point.
 const LABEL_H: f32 = 18.0;
 /// Width of the box an engraved numeral sits in.
@@ -126,54 +137,99 @@ const NUMERAL_W: f32 = 26.0;
 /// Width of the click target over a word beside a switch.
 const WORD_W: f32 = 30.0;
 
+/// How often the window is drawn again for the meters, and their figures read.
+/// Thirty times a second, as GainStageFx's meter does.
+const METER_INTERVAL: Duration = Duration::from_millis(33);
+
 pub fn create(
     params: Arc<PultEqFxParams>,
     editor_state: Arc<ViziaState>,
     meters: Arc<Meters>,
-) -> Option<Box<dyn Editor>> {
+) -> Option<vizia_plug::ViziaEditor> {
     let state = editor_state.clone();
-    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, gui| {
-        assets::register_noto_sans_regular(cx);
-        assets::register_noto_sans_bold(cx);
-        // Parse failures are not reported: vizia drops the sheet silently,
-        // which is what `settings::sheet_tests` guards against.
-        let _ = cx.add_stylesheet(settings::STYLESHEET);
-
-        Panel {
-            params: params.clone(),
-            meters: meters.clone(),
-        }
-        .build(cx);
-        UiState::new(state.user_scale_factor(), params.clone(), gui).build(cx);
-
-        // Nothing has to ask for the meters to be drawn again, nor for their
-        // figures to be read again. vizia's baseview backend draws the whole
-        // window on every frame, and reads every bound value again on every
-        // frame, which is how the bars and the figures follow the audio.
-        //
-        // A timer would not do, twice over. That backend never runs vizia's
-        // timers -- only the winit one does -- and starting a second one hangs
-        // outright: `modify_timer` peeks at the earliest running timer and
-        // only takes it off if it is the one asked for, otherwise peeking
-        // again for ever. That is how this editor once never opened.
-
-        Header::new(cx);
-
-        // The panel proper, offset below the header. Everything inside it is
-        // positioned in panel coordinates.
-        VStack::new(cx, faceplate)
-            .position_type(PositionType::SelfDirected)
-            .left(Pixels(0.0))
-            .top(Pixels(HEADER_H))
-            .width(Pixels(PANEL_W))
-            .height(Pixels(PANEL_H));
-
-        SettingsOverlay::new(cx);
-        Dialogs::new(cx);
+    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, _gui| {
+        build(
+            cx,
+            params.clone(),
+            meters.clone(),
+            state.user_scale_factor(),
+        );
     })
 }
 
+/// Everything the editor shows, built into a context. Kept apart from
+/// `create` so the render tests can build the real panel without a window.
+fn build(cx: &mut Context, params: Arc<PultEqFxParams>, meters: Arc<Meters>, scale: f64) {
+    fonts::register_noto_sans_regular(cx);
+    fonts::register_noto_sans_bold(cx);
+    // Parse failures are not reported: vizia drops the sheet silently,
+    // which is what `settings::sheet_tests` guards against.
+    let _ = cx.add_stylesheet(settings::STYLESHEET);
+
+    Panel {
+        params: params.clone(),
+        meters: meters.clone(),
+        parameter_signal: Signal::new(params.clone()),
+        readings: Signal::new(Readings::read(&meters)),
+    }
+    .build(cx);
+    UiState::new(scale, params.clone()).build(cx);
+    start_meter_clock(cx, meters);
+
+    Header::new(cx);
+
+    // The panel proper, offset below the header. Everything inside it is
+    // positioned in panel coordinates.
+    VStack::new(cx, faceplate)
+        .position_type(PositionType::Absolute)
+        .left(Pixels(0.0))
+        .top(Pixels(HEADER_H))
+        .width(Pixels(PANEL_W))
+        .height(Pixels(PANEL_H));
+
+    SettingsOverlay::new(cx);
+    Dialogs::new(cx);
+}
+
+/// Keeps the meters following the audio.
+///
+/// A meter follows the audio, not anything the editor is told about, and the
+/// vizia used now only draws what has asked to be: the old backend repainted
+/// the whole window every frame, which is what used to keep the bars moving
+/// and the figures under them current. So a timer does it instead, a few
+/// dozen times a second. The figures are labels, which only change when their
+/// signal is set, so it reads the meters into `Readings` too.
+///
+/// It asks for the whole window, not just the meters, for the same reason
+/// GainStageFx's does. After a host hides the editor and shows it again
+/// nothing else would ever paint the rest of it, and the panel came back
+/// blank.
+///
+/// Not from inside `LevelMeter::draw`, which was tried first: a frame is then
+/// always pending, and baseview's X11 thread never got round to the host's
+/// request to hide the window, so the host hung waiting for it.
+///
+/// Timers were off limits under the old backend, which never ran them and
+/// hung outright when a second was started. The vizia used now runs them from
+/// its baseview frame loop, and finds a running timer by searching for it.
+fn start_meter_clock(cx: &mut Context, meters: Arc<Meters>) {
+    let readings = cx.data::<Panel>().readings;
+    // Started from the root, so `needs_redraw` in the callback is the root's.
+    let timer = cx.add_timer(METER_INTERVAL, None, move |cx, action| {
+        if let TimerAction::Start | TimerAction::Tick(_) = action {
+            readings.set_if_changed(Readings::read(&meters));
+            cx.needs_redraw();
+        }
+    });
+    cx.start_timer(timer);
+}
+
+#[cfg(test)]
+mod render_tests;
+
 fn faceplate(cx: &mut Context) {
+    let params = cx.data::<Panel>().params.clone();
+    let parameters = cx.data::<Panel>().parameter_signal;
     Faceplate::new(cx);
 
     // --- upper row ----------------------------------------------------------
@@ -186,12 +242,12 @@ fn faceplate(cx: &mut Context) {
     for x in [LOW_BOOST_X, LOW_ATTEN_X, HIGH_BOOST_X, HIGH_ATTEN_X] {
         dial_scale(cx, x, TOP_ROW);
     }
-    Knob::new(cx, Panel::params, |p| &p.low_boost, R_LARGE).place(LOW_BOOST_X, TOP_ROW, R_LARGE);
-    Knob::new(cx, Panel::params, |p| &p.low_atten, R_LARGE).place(LOW_ATTEN_X, TOP_ROW, R_LARGE);
-    Knob::new(cx, Panel::params, |p| &p.high_boost, R_LARGE).place(HIGH_BOOST_X, TOP_ROW, R_LARGE);
-    Knob::new(cx, Panel::params, |p| &p.high_atten, R_LARGE).place(HIGH_ATTEN_X, TOP_ROW, R_LARGE);
+    Knob::new(cx, parameters, |p| &p.low_boost, R_LARGE).place(LOW_BOOST_X, TOP_ROW, R_LARGE);
+    Knob::new(cx, parameters, |p| &p.low_atten, R_LARGE).place(LOW_ATTEN_X, TOP_ROW, R_LARGE);
+    Knob::new(cx, parameters, |p| &p.high_boost, R_LARGE).place(HIGH_BOOST_X, TOP_ROW, R_LARGE);
+    Knob::new(cx, parameters, |p| &p.high_atten, R_LARGE).place(HIGH_ATTEN_X, TOP_ROW, R_LARGE);
 
-    let high_atten_freq = Panel::params.get(cx).high_atten_freq.as_ptr();
+    let high_atten_freq = params.high_atten_freq.as_ptr();
     selector_scale(
         cx,
         ATTEN_SEL_X,
@@ -201,7 +257,7 @@ fn faceplate(cx: &mut Context) {
     );
     Selector::new(
         cx,
-        Panel::params,
+        parameters,
         |p| &p.high_atten_freq,
         R_SELECTOR,
         3,
@@ -219,7 +275,7 @@ fn faceplate(cx: &mut Context) {
     small_engraved(cx, "IN", EQ_SWITCH_X - 28.0, BOTTOM_ROW - 28.0, 9.0);
     small_engraved(cx, "OUT", EQ_SWITCH_X + 28.0, BOTTOM_ROW - 28.0, 9.0);
     // IN is on the left, and is the parameter's true.
-    let eq_in = Panel::params.get(cx).eq_in.as_ptr();
+    let eq_in = params.eq_in.as_ptr();
     position(
         cx,
         eq_in,
@@ -236,35 +292,27 @@ fn faceplate(cx: &mut Context) {
         BOTTOM_ROW - 28.0,
         WORD_W,
     );
-    Selector::new(cx, Panel::params, |p| &p.eq_in, R_SMALL, 2, false, true).place(
+    Selector::new(cx, parameters, |p| &p.eq_in, R_SMALL, 2, false, true).place(
         EQ_SWITCH_X,
         BOTTOM_ROW,
         R_SMALL,
     );
 
     engraved(cx, "CPS", LOW_FREQ_X, 172.0, 10.0);
-    let low_freq = Panel::params.get(cx).low_freq.as_ptr();
+    let low_freq = params.low_freq.as_ptr();
     selector_scale(cx, LOW_FREQ_X, BOTTOM_ROW, &LowFreq::LABELS, low_freq);
-    Selector::new(
-        cx,
-        Panel::params,
-        |p| &p.low_freq,
-        R_SELECTOR,
-        4,
-        true,
-        false,
-    )
-    .place(LOW_FREQ_X, BOTTOM_ROW, R_SELECTOR);
+    Selector::new(cx, parameters, |p| &p.low_freq, R_SELECTOR, 4, true, false)
+        .place(LOW_FREQ_X, BOTTOM_ROW, R_SELECTOR);
     engraved(cx, "LOW FREQUENCY", LOW_FREQ_X, 302.0, 11.0);
 
     dial_scale(cx, BANDWIDTH_X, BOTTOM_ROW);
-    Knob::new(cx, Panel::params, |p| &p.bandwidth, R_LARGE).place(BANDWIDTH_X, BOTTOM_ROW, R_LARGE);
+    Knob::new(cx, parameters, |p| &p.bandwidth, R_LARGE).place(BANDWIDTH_X, BOTTOM_ROW, R_LARGE);
     small_engraved(cx, "SHARP", BANDWIDTH_X - 74.0, 286.0, 8.5);
     small_engraved(cx, "BROAD", BANDWIDTH_X + 74.0, 286.0, 8.5);
     engraved(cx, "BANDWIDTH", BANDWIDTH_X, 305.0, 11.0);
 
     engraved(cx, "KCS", HIGH_FREQ_X, 172.0, 10.0);
-    let high_boost_freq = Panel::params.get(cx).high_boost_freq.as_ptr();
+    let high_boost_freq = params.high_boost_freq.as_ptr();
     selector_scale(
         cx,
         HIGH_FREQ_X,
@@ -274,7 +322,7 @@ fn faceplate(cx: &mut Context) {
     );
     Selector::new(
         cx,
-        Panel::params,
+        parameters,
         |p| &p.high_boost_freq,
         R_SELECTOR,
         7,
@@ -285,8 +333,8 @@ fn faceplate(cx: &mut Context) {
     engraved(cx, "HIGH FREQUENCY", HIGH_FREQ_X, 302.0, 11.0);
 
     // --- lamp and power -----------------------------------------------------
-    Lamp::new(cx, Panel::params, |p| &p.power)
-        .position_type(PositionType::SelfDirected)
+    Lamp::new(cx, parameters, |p| &p.power)
+        .position_type(PositionType::Absolute)
         .left(Pixels(LAMP_X - 14.0))
         .top(Pixels(LAMP_Y - 14.0));
 
@@ -295,10 +343,10 @@ fn faceplate(cx: &mut Context) {
     // the shaft at (POWER_X, BOTTOM_ROW).
     small_engraved(cx, "OFF", POWER_X - 28.0, BOTTOM_ROW - 28.0, 9.0);
     small_engraved(cx, "ON", POWER_X + 28.0, BOTTOM_ROW - 28.0, 9.0);
-    let power = Panel::params.get(cx).power.as_ptr();
+    let power = params.power.as_ptr();
     position(cx, power, 0.0, POWER_X - 28.0, BOTTOM_ROW - 28.0, WORD_W);
     position(cx, power, 1.0, POWER_X + 28.0, BOTTOM_ROW - 28.0, WORD_W);
-    Selector::new(cx, Panel::params, |p| &p.power, R_SMALL, 2, false, false)
+    Selector::new(cx, parameters, |p| &p.power, R_SMALL, 2, false, false)
         .place(POWER_X, BOTTOM_ROW, R_SMALL);
 
     // --- meters -------------------------------------------------------------
@@ -339,7 +387,7 @@ pub trait Place {
 
 impl<V: View> Place for Handle<'_, V> {
     fn place(self, x: f32, y: f32, radius: f32) -> Self {
-        self.position_type(PositionType::SelfDirected)
+        self.position_type(PositionType::Absolute)
             .left(Pixels(x - radius))
             .top(Pixels(y - radius))
     }
@@ -356,9 +404,9 @@ fn small_engraved(cx: &mut Context, text: &str, x: f32, y: f32, size: f32) {
 
 /// One of the amplifier's trims: a small knob, its name, and what it is set to.
 ///
-/// The setting is read through a lens, and vizia reads every bound value
-/// again on every frame, so it follows the knob, the host's automation and a
-/// preset alike.
+/// The setting is mapped from `Panel::parameter_signal`, which is set again
+/// on every parameter event, so it follows the knob, the host's automation
+/// and a preset alike.
 fn trim(
     cx: &mut Context,
     name: &str,
@@ -366,23 +414,22 @@ fn trim(
     y: f32,
     setting: fn(&Arc<PultEqFxParams>) -> String,
 ) {
-    Knob::new(cx, Panel::params, param, R_TRIM).place(TRIM_X, y, R_TRIM);
+    let parameters = cx.data::<Panel>().parameter_signal;
+    Knob::new(cx, parameters, param, R_TRIM).place(TRIM_X, y, R_TRIM);
     // Below the knob as drawn, which is wider than its layout radius.
     let below = y + R_TRIM * sprites::KNOB_LARGE_DRAW / 2.0;
     small_engraved(cx, name, TRIM_X, below + 11.0, 8.0);
-    let setting = Panel::params.map(setting);
+    let setting = parameters.map(setting);
     for (dy, (r, g, b, a)) in [(1.0, (0, 0, 0, 110)), (0.0, (0xea, 0xec, 0xf0, 255))] {
         Label::new(cx, setting)
-            .position_type(PositionType::SelfDirected)
+            .position_type(PositionType::Absolute)
             .left(Pixels(TRIM_X - TRIM_TEXT_W / 2.0))
             .top(Pixels(below + 23.0 + dy - LABEL_H / 2.0))
             .width(Pixels(TRIM_TEXT_W))
             .height(Pixels(LABEL_H))
-            .child_left(Stretch(1.0))
-            .child_right(Stretch(1.0))
-            .child_top(Stretch(1.0))
-            .child_bottom(Stretch(1.0))
-            .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+            .alignment(Alignment::Center)
+            .text_align(TextAlign::Center)
+            .font_family(vec![FamilyOwned::Named(String::from(fonts::NOTO_SANS))])
             .font_weight(FontWeightKeyword::Bold)
             .font_size(8.0)
             .color(Color::rgba(r, g, b, a))
@@ -419,15 +466,14 @@ fn track_out(text: &str) -> String {
 fn plate(cx: &mut Context, text: &str, x: f32, y: f32, size: f32) {
     let text = track_out(text);
     for (dy, (r, g, b, a)) in [(1.0, (0, 0, 0, 110)), (0.0, (0xea, 0xec, 0xf0, 255))] {
-        Label::new(cx, &text)
-            .position_type(PositionType::SelfDirected)
+        Label::new(cx, text.clone())
+            .position_type(PositionType::Absolute)
             .left(Pixels(x))
             .top(Pixels(y + dy - LABEL_H / 2.0))
             .width(Pixels(200.0))
             .height(Pixels(LABEL_H))
-            .child_top(Stretch(1.0))
-            .child_bottom(Stretch(1.0))
-            .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+            .alignment(Alignment::Left)
+            .font_family(vec![FamilyOwned::Named(String::from(fonts::NOTO_SANS))])
             .font_weight(FontWeightKeyword::Bold)
             .font_size(size)
             .color(Color::rgba(r, g, b, a));
@@ -447,17 +493,15 @@ pub fn label_box(
     b: u8,
     a: u8,
 ) {
-    Label::new(cx, text)
-        .position_type(PositionType::SelfDirected)
+    Label::new(cx, text.to_owned())
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - width / 2.0))
         .top(Pixels(y - LABEL_H / 2.0))
         .width(Pixels(width))
         .height(Pixels(LABEL_H))
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        .alignment(Alignment::Center)
+        .text_align(TextAlign::Center)
+        .font_family(vec![FamilyOwned::Named(String::from(fonts::NOTO_SANS))])
         .font_weight(FontWeightKeyword::Bold)
         .font_size(size)
         .color(Color::rgba(r, g, b, a))
@@ -501,7 +545,8 @@ fn selector_scale(cx: &mut Context, x: f32, y: f32, labels: &[&str], param: Para
 
 /// A level meter with its title, its engraved scale and its two readouts.
 fn level_meter(cx: &mut Context, which: Which, x: f32) {
-    let meters = Panel::meters.get(cx);
+    let meters = cx.data::<Panel>().meters.clone();
+    let readings = cx.data::<Panel>().readings;
     let title = match which {
         Which::Input => "INPUT",
         Which::Output => "OUTPUT",
@@ -510,7 +555,7 @@ fn level_meter(cx: &mut Context, which: Which, x: f32) {
     engraved(cx, title, x, 21.0, 11.0);
 
     LevelMeter::new(cx, meters.clone(), which)
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - meter::WIDTH / 2.0))
         .top(Pixels(METER_TOP))
         .width(Pixels(meter::WIDTH))
@@ -555,16 +600,8 @@ fn level_meter(cx: &mut Context, which: Which, x: f32) {
         ("RMS", RMS_CAPTION_Y, RMS_READOUT_Y, false),
     ] {
         small_engraved(cx, caption, x, caption_y, 8.0);
-        let figure = Panel::meters.map(move |meters| {
-            if peak {
-                meter::peak_figure(meters, which)
-            } else {
-                meter::rms_figure(meters, which)
-            }
-        });
-        let handle = ReadoutBox::new(cx, meters.clone(), which, peak, figure);
-        handle
-            .position_type(PositionType::SelfDirected)
+        ReadoutBox::new(cx, meters.clone(), which, peak, readings)
+            .position_type(PositionType::Absolute)
             .left(Pixels(x - READOUT_W / 2.0))
             .top(Pixels(box_y))
             .width(Pixels(READOUT_W))
@@ -581,7 +618,7 @@ fn numeral(cx: &mut Context, text: &str, x: f32, y: f32) {
 /// `normalized`, as turning the switch there would.
 fn position(cx: &mut Context, param: ParamPtr, normalized: f32, x: f32, y: f32, width: f32) {
     Detent::new(cx, param, normalized)
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - width / 2.0))
         .top(Pixels(y - LABEL_H / 2.0))
         .width(Pixels(width))

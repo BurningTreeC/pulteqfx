@@ -14,9 +14,11 @@
 //! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 //! Public License in `LICENSE` for more details.
 //!
-//! The GPL applies because `nih_export_vst3!()` links the VST3 bindings from
-//! the `vst3-sys` crate, which are themselves GPLv3. Everything else the
-//! plugin uses is permissively licensed; see `THIRD-PARTY-NOTICES.md`.
+//! It was GPL from the start because nih-plug's VST3 export linked the GPLv3
+//! `vst3-sys` bindings. nice-plug exports VST3 through the permissively
+//! licensed `vst3` crate instead, so nothing the plugin links forces the GPL
+//! any more; the licence stays as it was. Everything the plugin uses is listed
+//! in `THIRD-PARTY-NOTICES.md`.
 //!
 //! The passive equaliser network is simulated as a circuit (see
 //! [`dsp::eqp1a`]) rather than approximated with a bank of textbook shelves,
@@ -24,7 +26,7 @@
 //! trick above all - are a consequence of the topology instead of a special
 //! case bolted on afterwards.
 
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use std::sync::Arc;
 
 pub mod dsp;
@@ -89,12 +91,13 @@ impl Plugin for PultEqFx {
 
     type SysExMessage = ();
     type BackgroundTask = ();
+    type Editor = vizia_plug::ViziaEditor;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         editor::create(
             self.params.clone(),
             self.params.editor_state.clone(),
@@ -102,11 +105,11 @@ impl Plugin for PultEqFx {
         )
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        context: &mut impl InitContext<Self>,
+        context: &mut impl ActivateContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
         self.oversampling = self.params.oversampling.value();
@@ -227,5 +230,31 @@ impl Vst3Plugin for PultEqFx {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Eq];
 }
 
-nih_export_clap!(PultEqFx);
-nih_export_vst3!(PultEqFx);
+nice_export_clap!(PultEqFx);
+nice_export_vst3!(PultEqFx);
+
+// ---------------------------------------------------------------------------
+// macOS Audio Unit v2 export
+// ---------------------------------------------------------------------------
+//
+// AUv2 identifies a plugin by FourCC codes rather than by the CLAP and VST3
+// identifiers above, and hosts store those codes in their projects. Once
+// they have shipped they must never change, any more than a parameter id may.
+//
+// Manufacturer: BrTC = BurningTreeC, shared with GainStageFx
+// Subtype:      PEQf = PultEQFx
+//
+// An equaliser is an audio effect, so its component type is "aufx".
+// `tools/package_au2.sh` writes the same three codes into the bundle's
+// Info.plist; the two have to agree or the host finds nothing.
+
+#[cfg(target_os = "macos")]
+impl nice_plug_au2::Au2Plugin for PultEqFx {
+    const AU2_CATEGORY: nice_plug_au2::Au2Category = nice_plug_au2::Au2Category::Effect;
+    const AU2_MANUFACTURER: [u8; 4] = *b"BrTC";
+    const AU2_SUBTYPE: [u8; 4] = *b"PEQf";
+    const AU2_NAME: &'static str = "PultEQFx";
+}
+
+#[cfg(target_os = "macos")]
+nice_plug_au2::nice_export_au2!(PultEqFx);

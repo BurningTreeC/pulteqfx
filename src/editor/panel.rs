@@ -1,7 +1,8 @@
 //! The faceplate: enamel, mounting screws and the edges the light catches.
 
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
+use super::paint as vg;
+use super::paint::PanelCanvas;
+use vizia_plug::vizia::prelude::*;
 
 use super::sprites::{self, Placement, Sprite};
 use super::style::*;
@@ -24,7 +25,7 @@ impl Faceplate {
             screws: [Sprite::new(), Sprite::new(), Sprite::new(), Sprite::new()],
         }
         .build(cx, |_| {})
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(0.0))
         .top(Pixels(0.0))
         .width(Percentage(100.0))
@@ -37,20 +38,20 @@ impl View for Faceplate {
         Some("pulteqfx-faceplate")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
 
         // The petrol blue enamel.
         let mut panel = vg::Path::new();
-        panel.rect(b.x, b.y, b.w, b.h);
+        panel.rect(b.x, b.y, b.width(), b.height());
         canvas.fill_path(
             &panel,
             &vg::Paint::linear_gradient(
                 b.x,
                 b.y,
                 b.x,
-                b.y + b.h,
+                b.y + b.height(),
                 rgb(PANEL_TOP),
                 rgb(PANEL_BOTTOM),
             ),
@@ -69,14 +70,14 @@ impl View for Faceplate {
         // part that actually carries the direction -- a highlight alone leaves
         // the far half of a panel this wide uniformly lit, because the
         // gradient has run out long before it gets there.
-        let (lx, ly) = (b.x + b.w * 0.045, b.y - b.h * 0.12);
+        let (lx, ly) = (b.x + b.width() * 0.045, b.y - b.height() * 0.12);
         canvas.fill_path(
             &panel,
             &vg::Paint::radial_gradient(
                 lx,
                 ly,
                 0.0,
-                b.w * 0.95,
+                b.width() * 0.95,
                 rgba(0xffffff, 0.100),
                 rgba(0xffffff, 0.0),
             ),
@@ -87,7 +88,7 @@ impl View for Faceplate {
                 lx,
                 ly,
                 0.0,
-                b.h * 1.15,
+                b.height() * 1.15,
                 rgba(0xffffff, 0.085),
                 rgba(0xffffff, 0.0),
             ),
@@ -99,21 +100,21 @@ impl View for Faceplate {
             &vg::Paint::linear_gradient(
                 b.x,
                 b.y,
-                b.x + b.w,
-                b.y + b.h,
+                b.x + b.width(),
+                b.y + b.height(),
                 rgba(0x000000, 0.0),
                 rgba(0x000000, 0.26),
             ),
         );
 
         // Very fine horizontal grain in the paint.
-        let lines = (b.h / (3.0 * scale)).max(1.0) as usize;
+        let lines = (b.height() / (3.0 * scale)).max(1.0) as usize;
         for i in 0..lines {
-            let y = b.y + (i as f32 + 0.5) * b.h / lines as f32;
+            let y = b.y + (i as f32 + 0.5) * b.height() / lines as f32;
             let shade = if i % 2 == 0 { 0x000000 } else { 0xffffff };
             let mut line = vg::Path::new();
             line.move_to(b.x, y);
-            line.line_to(b.x + b.w, y);
+            line.line_to(b.x + b.width(), y);
             canvas.stroke_path(
                 &line,
                 &vg::Paint::color(rgba(shade, 0.012)).with_line_width(scale),
@@ -123,9 +124,9 @@ impl View for Faceplate {
         // Falloff towards the ends and the bottom edge. The left edge keeps
         // less than the right, because the left edge is the lit one.
         for (sx, sy, ex, ey, alpha) in [
-            (b.x, b.y, b.x + b.w * 0.08, b.y, 0.07),
-            (b.x + b.w, b.y, b.x + b.w * 0.92, b.y, 0.20),
-            (b.x, b.y + b.h, b.x, b.y + b.h * 0.84, 0.20),
+            (b.x, b.y, b.x + b.width() * 0.08, b.y, 0.07),
+            (b.x + b.width(), b.y, b.x + b.width() * 0.92, b.y, 0.20),
+            (b.x, b.y + b.height(), b.x, b.y + b.height() * 0.84, 0.20),
         ] {
             canvas.fill_path(
                 &panel,
@@ -144,10 +145,10 @@ impl View for Faceplate {
         canvas.fill_path(
             &panel,
             &vg::Paint::radial_gradient(
-                b.x + b.w,
-                b.y + b.h,
+                b.x + b.width(),
+                b.y + b.height(),
                 0.0,
-                b.h * 1.30,
+                b.height() * 1.30,
                 rgba(0x000000, 0.16),
                 rgba(0x000000, 0.0),
             ),
@@ -163,13 +164,13 @@ impl View for Faceplate {
                     canvas,
                     sprites::SCREWS[k],
                     Placement::new(
-                        b.x + b.w * sx,
-                        b.y + b.h * sy,
+                        b.x + b.width() * sx,
+                        b.y + b.height() * sy,
                         SCREW_SIZE * scale,
                         0.0,
                         sprites::CENTRE,
                     )
-                    .lit(light_at(b.w * sx / scale, b.h * sy / scale)),
+                    .lit(light_at(b.width() * sx / scale, b.height() * sy / scale)),
                 );
             }
         }
@@ -177,14 +178,14 @@ impl View for Faceplate {
         // Bevelled top and bottom edges.
         let mut top = vg::Path::new();
         top.move_to(b.x, b.y + scale);
-        top.line_to(b.x + b.w, b.y + scale);
+        top.line_to(b.x + b.width(), b.y + scale);
         canvas.stroke_path(
             &top,
             &vg::Paint::color(rgba(0xffffff, 0.24)).with_line_width(scale * 2.0),
         );
         let mut bottom = vg::Path::new();
-        bottom.move_to(b.x, b.y + b.h - scale);
-        bottom.line_to(b.x + b.w, b.y + b.h - scale);
+        bottom.move_to(b.x, b.y + b.height() - scale);
+        bottom.line_to(b.x + b.width(), b.y + b.height() - scale);
         canvas.stroke_path(
             &bottom,
             &vg::Paint::color(rgba(0x000000, 0.5)).with_line_width(scale * 2.5),

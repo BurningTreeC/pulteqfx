@@ -1,7 +1,8 @@
 //! Panel colours, geometry and the drawing primitives the widgets share.
 
-use nih_plug_vizia::vizia::prelude::Canvas;
-use nih_plug_vizia::vizia::vg;
+use super::paint as vg;
+use super::paint::PanelCanvas;
+use vizia_plug::vizia::prelude::Canvas;
 
 /// Panel size in logical pixels, in the proportions of the 19 inch by 5.25
 /// inch rack panel the hardware is built on.
@@ -34,16 +35,17 @@ pub const PANEL_TOP: u32 = 0x365660;
 pub const PANEL_BOTTOM: u32 = 0x1e353c;
 
 pub fn rgb(hex: u32) -> vg::Color {
-    vg::Color::rgb(
-        ((hex >> 16) & 0xff) as u8,
-        ((hex >> 8) & 0xff) as u8,
-        (hex & 0xff) as u8,
+    vg::Color::new(
+        ((hex >> 16) & 0xff) as f32 / 255.0,
+        ((hex >> 8) & 0xff) as f32 / 255.0,
+        (hex & 0xff) as f32 / 255.0,
+        1.0,
     )
 }
 
 pub fn rgba(hex: u32, alpha: f32) -> vg::Color {
     let mut c = rgb(hex);
-    c.set_alphaf(alpha);
+    c.a = alpha;
     c
 }
 
@@ -127,7 +129,7 @@ pub fn light_at_screen(mx: f32, my: f32, scale: f32) -> f32 {
 /// The shadow a control casts onto the panel. Every control on the panel sits
 /// in the same light, so the drawn ones and the rendered knobs share this
 /// rather than each carrying a shadow of its own.
-pub fn contact_shadow(canvas: &mut Canvas, cx: f32, cy: f32, r: f32) {
+pub fn contact_shadow(canvas: &Canvas, cx: f32, cy: f32, r: f32) {
     // Down and to the right, because the light is in the top left corner. It
     // used to fall straight down, which is a light directly overhead and
     // disagrees with every render on the panel.
@@ -157,7 +159,7 @@ pub fn contact_shadow(canvas: &mut Canvas, cx: f32, cy: f32, r: f32) {
 ///
 /// `bar` draws the long radial index the frequency selectors carry; without it
 /// the mark is the short stub the equaliser and power switches have.
-pub fn switch_pointer(canvas: &mut Canvas, cx: f32, cy: f32, r: f32, angle: f32, bar: bool) {
+pub fn switch_pointer(canvas: &Canvas, cx: f32, cy: f32, r: f32, angle: f32, bar: bool) {
     let (sa, ca) = angle.to_radians().sin_cos();
     let (from, to) = if bar { (0.26, 0.94) } else { (0.42, 0.94) };
     let at = |t: f32| (cx + r * t * sa, cy - r * t * ca);

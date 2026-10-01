@@ -1,8 +1,10 @@
 # PultEQFx
 
 A circuit modelled passive program equalizer, built with
-[NIH-plug](https://github.com/robbert-vdh/nih-plug). Builds as CLAP and VST3,
-plus a standalone application for trying it out.
+[nice-plug](https://codeberg.org/RustAudio/nice-plug) and
+[Vizia](https://github.com/vizia/vizia). Builds as CLAP and VST3 everywhere and
+as an Audio Unit (AUv2) on macOS, plus a standalone application for trying it
+out.
 
 PultEQFx models the passive equalizer circuit of the classic 1950s tube program
 equalizer, the Pultec® EQP-1A. It is not affiliated with, endorsed by, or
@@ -207,7 +209,9 @@ reproduces the same files byte for byte.
 
 ## Building
 
-Needs a Rust toolchain and the usual X11 development packages.
+Needs a Rust toolchain, the usual X11 development packages, and fontconfig's,
+which Skia uses; `.github/workflows/build.yml` lists them all. The first build
+downloads Skia's prebuilt native library.
 
 ```sh
 ./install.sh
@@ -226,6 +230,19 @@ cargo xtask bundle pulteqfx --release
 
 This writes `PultEQFx.clap` and `PultEQFx.vst3` to `target/bundled`.
 
+The Audio Unit is built on macOS only, from the same universal binary, through
+[nice-plug-au2](https://codeberg.org/fazibear/nice-plug-addons) (vendored in
+`vendor/nice-plug-au2`):
+
+```sh
+cargo xtask bundle-universal pulteqfx --release
+bash tools/package_au2.sh
+```
+
+That adds `PultEQFx.component` to `target/bundled`, ad-hoc signed. It is an
+`aufx` effect with subtype `PEQf` and manufacturer `BrTC`, which `auval -v aufx
+PEQf BrTC` validates once it is in `~/Library/Audio/Plug-Ins/Components`.
+
 To try it without a host:
 
 ```sh
@@ -237,25 +254,26 @@ cargo run --release --features standalone -- --backend auto
 PultEQFx is under the **GNU General Public License version 3 or later**, whose
 text is in [`LICENSE`](LICENSE).
 
-That is not a free choice. NIH-plug itself is ISC licensed, but
-`nih_export_vst3!()` links the [vst3-sys](https://github.com/RustAudio/vst3-sys)
-bindings, which are GPLv3, so any VST3 built with NIH-plug has to be able to
-comply with the GPL. Dropping the VST3 export and shipping only the CLAP would
-free the plugin to use a permissive licence instead; every other crate it links
-is permissive.
+It was not a free choice when the plugin was built on NIH-plug, whose VST3
+export linked the GPLv3 [vst3-sys](https://github.com/RustAudio/vst3-sys)
+bindings. nice-plug exports VST3 through the permissively licensed
+[vst3](https://github.com/coupler-rs/vst3-rs) crate instead, so nothing the
+plugin links requires the GPL any more; the licence is unchanged.
 
-Three dependencies are worth naming directly:
+Some dependencies are worth naming directly:
 
-* **NIH-plug** and its companion crates are under the
-  [ISC licence](https://www.isc.org/licenses/), copyright Robbert van der Helm.
-* **vst3-sys** is GPLv3, which is what makes the plugin as a whole GPL.
-* **Noto Sans** is compiled into the binary for the panel lettering. The fonts
-  come from `nih_plug_assets`, which is itself ISC, but the font files are
-  under the SIL Open Font License 1.1, copyright The Noto Project Authors. That
-  licence requires it travel with the binary, so it is reproduced in full.
+* **nice-plug**, its companion crates and **nice-plug-au2** are under the
+  [ISC licence](https://www.isc.org/licenses/).
+* **Skia**, which draws the panel through Vizia, is BSD licensed; its native
+  library's licence is reproduced separately from the Rust bindings'.
+* **Noto Sans** is compiled into the binary for the panel lettering, from
+  `assets/fonts`. The font files are under the SIL Open Font License 1.1,
+  copyright The Noto Project Authors. That licence requires it travel with the
+  binary, so it is reproduced in full.
 
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) reproduces the licences and
-copyright notices of all 286 crates PultEQFx links, grouped by licence. Where a
+copyright notices of all 313 crates PultEQFx links on any platform it ships for,
+grouped by licence. Where a
 crate offers a choice, the licence taken is named, and where a crate bundles
 assets under a different licence than its own, that is called out too.
 Regenerate it after changing dependencies:
@@ -284,4 +302,8 @@ python3 tools/third-party-notices.py
 | `tests/drive.rs` | what DRIVE does, and Low End Punch against the old drive |
 | `tests/presets.rs` | preset storage round trip |
 | `tests/state.rs` | what survives a save and reload |
+| `tests/scaling.rs` | the window size, and how a zoom reaches the host |
+| `tools/linux_gui_smoke.py` | opens the real CLAP editor in an X11 window |
+| `tools/package_au2.sh` | wraps the macOS binary as an Audio Unit |
 | `tools/third-party-notices.py` | regenerates the dependency licence file |
+| `vendor/` | the GUI stack and AU bridge, with their local changes in `PATCHES.md` |

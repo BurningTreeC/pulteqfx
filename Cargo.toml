@@ -1,14 +1,18 @@
 [package]
 name = "pulteqfx"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 authors = ["Simon Huber <huber.simon@protonmail.com>"]
 license = "GPL-3.0-or-later"
-description = "PultEQFx, a circuit modelled passive program equalizer (CLAP/VST3)"
+description = "PultEQFx, a circuit modelled passive program equalizer (CLAP/VST3/AU)"
 
 [workspace]
-members = ["assetgen", "installer", "xtask"]
-exclude = ["vendor/baseview"]
+members = ["assetgen", "installer", "xtask", "vendor/nice-plug-au2"]
+exclude = ["vendor/baseview", "vendor/vizia", "vendor/vizia_plug"]
+
+# One audited backend shared by the editor and its adapter.
+[patch.crates-io]
+baseview = { path = "vendor/baseview" }
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -20,19 +24,22 @@ required-features = ["standalone"]
 [features]
 # The standalone host is only for trying the plugin outside a DAW.
 default = []
-standalone = ["nih_plug/standalone"]
+standalone = ["nice-plug/standalone"]
 
 [dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "f36931f7af4646065488a9845d8f8c2f95252c23" }
-nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "f36931f7af4646065488a9845d8f8c2f95252c23" }
-# The same GUI backend vizia uses, which the patch below points at
-# `vendor/baseview`. Named directly only for its text-entry switch, which tells
-# it on Windows that the preset-name box wants the keyboard.
-baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "2c1b1a7b0fef1a29a5150a6a8f6fef6a0cbab8c4" }
+# nih-plug flushed denormals around `process` unconditionally; nice-plug only
+# does with this feature, and the network's capacitor state decays into them.
+nice-plug = { git = "https://codeberg.org/RustAudio/nice-plug", rev = "e60b5db09d8606c3dc3e93f982847a00bce17325", features = ["unsafe_flush_denormals"] }
+vizia_plug = { path = "vendor/vizia_plug" }
 
 # For reading and writing preset files.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# AUv2 is a macOS-only plugin format. Keeping this target-specific prevents
+# CoreAudio/AppKit dependencies from entering Linux and Windows builds.
+[target.'cfg(target_os = "macos")'.dependencies]
+nice-plug-au2 = { path = "vendor/nice-plug-au2" }
 
 [profile.release]
 lto = "thin"
@@ -43,7 +50,3 @@ opt-level = 3
 inherits = "release"
 debug = true
 strip = "none"
-
-# Preserve the pinned GUI backend, with Windows input and resize fixes vendored.
-[patch."https://github.com/RustAudio/baseview.git"]
-baseview = { path = "vendor/baseview" }

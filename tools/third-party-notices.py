@@ -17,7 +17,16 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
 OUTPUT = PROJECT / "THIRD-PARTY-NOTICES.md"
-TARGET = "x86_64-unknown-linux-gnu"
+# Every target an archive is built for. A crate linked on only one of them --
+# the Audio Unit bridge and the Apple bindings under it, the Windows API
+# crates -- still ships in that archive, and this one file travels with all
+# of them, so the list is the union.
+TARGETS = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
 
 # Licence files are found by name; these are the ones crates.io crates use.
 LICENCE_FILES = re.compile(r"^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE)", re.IGNORECASE)
@@ -55,9 +64,10 @@ PREFERENCE = [
 ]
 
 # Some crates bundle assets under a licence of their own. The fonts inside
-# nih_plug_assets are the reason this matters here: the crate is ISC, but the
-# Noto Sans files it embeds into the binary are under the SIL Open Font
-# License, which has to travel with them.
+# nih_plug_assets were why this mattered here: the crate was ISC, but the
+# Noto Sans files it embedded into the binary are under the SIL Open Font
+# License, which has to travel with them. The fonts are carried in
+# assets/fonts now and noticed on their own, but a crate can still do this.
 CONTENT_IDS = [
     ("SIL OPEN FONT LICENSE", "OFL-1.1"),
     ("Mozilla Public License", "MPL-2.0"),
@@ -74,9 +84,9 @@ NOT_A_NOTICE = re.compile(
 HAS_YEAR = re.compile(r"(19|20)\d{2}")
 
 
-def metadata():
+def metadata(target):
     raw = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--filter-platform", TARGET],
+        ["cargo", "metadata", "--format-version", "1", "--filter-platform", target],
         cwd=PROJECT,
         capture_output=True,
         text=True,
@@ -131,8 +141,8 @@ def licence_texts(package):
             continue
         # A subdirectory with its own Cargo.toml is a different package, and
         # cargo lists it separately if we actually depend on it. Its licence is
-        # not ours to report, which is what keeps nih-plug's own GPL licensed
-        # example plugins out of this file.
+        # not ours to report, which is what keeps a framework's own example
+        # plugins, whatever their licence, out of this file.
         if any(
             (source.joinpath(*relative.parts[:depth]) / "Cargo.toml").is_file()
             for depth in range(1, len(relative.parts))
@@ -227,9 +237,12 @@ def canonical_bodies(packages):
 
 
 def main():
-    meta = metadata()
+    linked = {}
+    for target in TARGETS:
+        for package in linked_packages(metadata(target)):
+            linked[package["id"]] = package
     packages = sorted(
-        linked_packages(meta), key=lambda p: (p["name"].lower(), p["version"])
+        linked.values(), key=lambda p: (p["name"].lower(), p["version"])
     )
 
     groups = {}
@@ -249,6 +262,25 @@ def main():
         "takes is named alongside it, and that is the text reproduced below.",
         "",
         "Regenerate this file with `python3 tools/third-party-notices.py`.",
+        "",
+        "## Bundled fonts and native renderer",
+        "",
+        "The panel's lettering is Noto Sans, embedded in the plugin binary:",
+        "",
+        "```",
+        (PROJECT / "assets/fonts/NOTICE").read_text().strip(),
+        "```",
+        "",
+        "```",
+        (PROJECT / "assets/fonts/LICENSE-OFL").read_text().strip(),
+        "```",
+        "",
+        "Skia is used by the Vizia renderer through rust-skia. Its native library",
+        "has the following license (separate from the Rust bindings):",
+        "",
+        "```",
+        (PROJECT / "assets/licenses/LICENSE_SKIA").read_text().strip(),
+        "```",
         "",
         "## Crates",
         "",
@@ -278,8 +310,8 @@ def main():
         needed_now.update(bundled(package, licence_texts(package)))
     out.append("## License texts")
     out.append("")
-    out.append("The GPLv3, which covers both this plugin and the `vst3-sys` crate,")
-    out.append("is in `LICENSE` rather than repeated here.")
+    out.append("The GPLv3, which covers this plugin, is in `LICENSE` rather than")
+    out.append("repeated here.")
     out.append("")
     # The GPL text lives in LICENSE, so it is not repeated here.
     skip = {"GPLv3", "GPL-3.0", "GPL-3.0-or-later"}

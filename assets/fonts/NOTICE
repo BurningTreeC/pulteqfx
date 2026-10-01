@@ -1,0 +1,7 @@
+Noto Sans Regular and Noto Sans Bold
+Copyright 2018 The Noto Project Authors (github.com/googlei18n/noto-fonts)
+Licensed under the SIL Open Font License, Version 1.1 (see LICENSE-OFL).
+
+These are the unchanged Noto Sans faces previously embedded by nih_plug_assets
+at NIH-plug f36931f7af4646065488a9845d8f8c2f95252c23. They are retained to
+preserve PultEQFx's panel lettering when moving the editor to Skia.

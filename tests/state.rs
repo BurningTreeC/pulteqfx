@@ -1,6 +1,6 @@
 //! What survives a save and reload.
 
-use nih_plug::prelude::*;
+use nice_plug::prelude::*;
 use pulteqfx::params::{Oversampling, PultEqFxParams};
 
 #[test]
